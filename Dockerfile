@@ -22,10 +22,10 @@ RUN cargo build --release
 # Runtime: slim Debian image (provides libssl3 for dynamic OpenSSL linking).
 FROM --platform=$TARGETPLATFORM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /build/target/release/buildkit-agent /usr/local/bin/buildkit-agent
+COPY --from=builder /build/target/release/buildkit-metrics-agent /usr/local/bin/buildkit-metrics-agent
 
 ENV BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock
 ENV METRICS_ADDR=0.0.0.0:9090
 
 EXPOSE 9090
-ENTRYPOINT ["/usr/local/bin/buildkit-agent"]
+ENTRYPOINT ["/usr/local/bin/buildkit-metrics-agent"]

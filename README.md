@@ -6,7 +6,7 @@ Rust sidecar that connects to BuildKit over its gRPC socket and exposes **status
 flowchart LR
   subgraph host
     BK[BuildKit daemon]
-    A[buildkit-agent]
+    A[buildkit-metrics-agent]
   end
   BK -->|"gRPC (unix socket)"| A
   A -->|"GET /metrics"| P[Prometheus]
@@ -39,23 +39,24 @@ Generated code must exist in `src/generated/` (run `make generate` and commit, o
 Single arch (current host):
 
 ```bash
-docker build -t buildkit-agent .
+docker build -t buildkit-metrics-agent .
 ```
 
 Both linux/amd64 and linux/arm64 (manifest list):
 
 ```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t buildkit-agent .
+docker buildx build --platform linux/amd64,linux/arm64 -t buildkit-metrics-agent .
 # or: make docker-multi
 ```
 
-Run next to BuildKit (mount the socket and expose metrics):
+## Kubernetes
+
+Deploy as a sidecar next to BuildKit using the provided example:
 
 ```bash
-docker run --rm \
-  -v /run/buildkit/buildkitd.sock:/run/buildkit/buildkitd.sock \
-  -p 9090:9090 \
-  buildkit-agent
+kubectl apply -f examples/kubernetes.yaml
 ```
 
-Scrape `http://localhost:9090/metrics` for Prometheus.
+See [`examples/kubernetes.yaml`](examples/kubernetes.yaml) for the full Pod + Service manifest.
+
+Scrape `http://<pod-ip>:9090/metrics` or use the `buildkit-metrics-agent` Service for in-cluster Prometheus scraping.
