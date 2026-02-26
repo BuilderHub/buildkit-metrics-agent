@@ -1,0 +1,113 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: buildkitd
+  labels:
+    app: buildkitd
+spec:
+  containers:
+    - name: buildkitd
+      image: moby/buildkit:master-rootless
+      args:
+        - --oci-worker-no-process-sandbox
+        - --addr
+        - unix:///run/buildkit/buildkitd.sock
+        - --addr
+        - tcp://0.0.0.0:1234
+      env:
+        - name: BUILDKIT_HOST
+          value: unix:///run/buildkit/buildkitd.sock
+      ports:
+        - containerPort: 1234
+          name: buildkit
+      readinessProbe:
+        exec:
+          command:
+            - buildctl
+            - debug
+            - workers
+        initialDelaySeconds: 5
+        periodSeconds: 30
+      livenessProbe:
+        exec:
+          command:
+            - buildctl
+            - debug
+            - workers
+        initialDelaySeconds: 5
+        periodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: Unconfined
+        appArmorProfile:
+          type: Unconfined
+        runAsUser: 1000
+        runAsGroup: 1000
+      volumeMounts:
+        - mountPath: /home/user/.local/share/buildkit
+          name: buildkitd
+        - mountPath: /run/buildkit
+          name: buildkit-socket-dir
+    - name: buildkit-metrics-agent
+      image: ghcr.io/builderhub/buildkit-metrics-agent:latest
+      imagePullPolicy: Never
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      env:
+        - name: BUILDKIT_ADDR
+          value: unix:///run/buildkit/buildkitd.sock
+        - name: METRICS_ADDR
+          value: 0.0.0.0:9090
+        - name: SCRAPE_INTERVAL_SECS
+          value: "15"
+      ports:
+        - containerPort: 9090
+          name: metrics
+      readinessProbe:
+        httpGet:
+          path: /metrics
+          port: 9090
+        initialDelaySeconds: 10
+        periodSeconds: 15
+      livenessProbe:
+        httpGet:
+          path: /metrics
+          port: 9090
+        initialDelaySeconds: 10
+        periodSeconds: 30
+      volumeMounts:
+        - mountPath: /run/buildkit
+          name: buildkit-socket-dir
+  volumes:
+    - name: buildkitd
+      emptyDir: {}
+    - name: buildkit-socket-dir
+      emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildkit-metrics-agent
+spec:
+  selector:
+    app: buildkitd
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildkitd
+spec:
+  selector:
+    app: buildkitd
+  ports:
+    - name: buildkitd
+      port: 1234
+      targetPort: 1234
+  type: ClusterIP

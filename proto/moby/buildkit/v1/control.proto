@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package moby.buildkit.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Minimal Control service for status/metrics: info, workers, cache (disk usage).
+// Wire-compatible with BuildKit's Control API.
+// Types inlined so codegen produces a single source file.
+service Control {
+  rpc Info(InfoRequest) returns (InfoResponse);
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+  rpc DiskUsage(DiskUsageRequest) returns (DiskUsageResponse);
+  rpc ListenBuildHistory(BuildHistoryRequest) returns (stream BuildHistoryEvent);
+}
+
+// --- Types (wire-compatible with BuildKit api/types/worker.proto) ---
+message Platform {
+  string Architecture = 1;
+  string OS = 2;
+  string Variant = 3;
+  string OSVersion = 4;
+  repeated string OSFeatures = 5;
+}
+
+message BuildkitVersion {
+  string package = 1;
+  string version = 2;
+  string revision = 3;
+}
+
+message GCPolicy {
+  bool all = 1;
+  int64 keepDuration = 2;
+  int64 reservedSpace = 3;
+  repeated string filters = 4;
+  int64 maxUsedSpace = 5;
+  int64 minFreeSpace = 6;
+}
+
+message CDIDevice {
+  string Name = 1;
+  bool AutoAllow = 2;
+  map<string, string> Annotations = 3;
+  bool OnDemand = 4;
+}
+
+message WorkerRecord {
+  string ID = 1;
+  map<string, string> Labels = 2;
+  repeated Platform platforms = 3;
+  repeated GCPolicy GCPolicy = 4;
+  BuildkitVersion BuildkitVersion = 5;
+  repeated CDIDevice CDIDevices = 6;
+}
+
+// --- Control messages ---
+message InfoRequest {}
+
+message InfoResponse {
+  BuildkitVersion buildkit_version = 1;
+}
+
+message ListWorkersRequest {
+  repeated string filter = 1;
+}
+
+message ListWorkersResponse {
+  repeated WorkerRecord record = 1;
+}
+
+message DiskUsageRequest {
+  repeated string filter = 1;
+  int64 age_limit = 2;
+}
+
+message DiskUsageResponse {
+  repeated UsageRecord record = 1;
+}
+
+message UsageRecord {
+  string ID = 1;
+  bool Mutable = 2;
+  bool InUse = 3;
+  int64 Size = 4;
+  string Parent = 5 [deprecated = true];
+  google.protobuf.Timestamp CreatedAt = 6;
+  google.protobuf.Timestamp LastUsedAt = 7;
+  int64 UsageCount = 8;
+  string Description = 9;
+  string RecordType = 10;
+  bool Shared = 11;
+  repeated string Parents = 12;
+}
+
+message BuildHistoryRequest {
+  bool ActiveOnly = 1;
+  string Ref = 2;
+  // EarlyExit: stream existing history then close (no tail).
+  bool EarlyExit = 3;
+}
+
+enum BuildHistoryEventType {
+  STARTED = 0;
+  COMPLETE = 1;
+  DELETED = 2;
+}
+
+message BuildHistoryEvent {
+  BuildHistoryEventType type = 1;
+  BuildHistoryRecord record = 2;
+}
+
+// Subset of BuildKit's BuildHistoryRecord — only fields needed for metrics.
+// Field numbers are wire-compatible with the upstream proto.
+message BuildHistoryRecord {
+  string Ref = 1;
+  string Frontend = 2;
+  // fields 3–4 (FrontendAttrs, Exporters) skipped
+  BuildError error = 5;
+  google.protobuf.Timestamp CreatedAt = 6;
+  google.protobuf.Timestamp CompletedAt = 7;
+  // fields 8–14 skipped
+  int32 numCachedSteps = 15;
+  int32 numTotalSteps = 16;
+  int32 numCompletedSteps = 17;
+}
+
+// Wire-compatible with google.rpc.Status (same field numbers).
+message BuildError {
+  int32 code = 1;
+  string message = 2;
+}

@@ -1,0 +1,31 @@
+[package]
+name = "buildkit-metrics-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Sidecar agent that reports BuildKit metrics via gRPC"
+license = "MIT"
+authors = ["BuilderHub"]
+
+[workspace]
+members = ["tools/codegen"]
+
+[dependencies]
+# gRPC (Control API only: info, workers, disk usage)
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Metrics HTTP server (Prometheus scrape endpoint)
+axum = "0.7"
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+
+# Config / env
+clap = { version = "4", features = ["env", "derive"] }
+tower = "0.4"
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio"] }
+

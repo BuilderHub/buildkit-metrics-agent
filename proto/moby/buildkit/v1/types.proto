@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package moby.buildkit.v1.types;
+
+// Minimal types for Control API (Info, ListWorkers). Wire-compatible with BuildKit.
+
+message Platform {
+  string Architecture = 1;
+  string OS = 2;
+  string Variant = 3;
+  string OSVersion = 4;
+  repeated string OSFeatures = 5;
+}
+
+message BuildkitVersion {
+  string package = 1;
+  string version = 2;
+  string revision = 3;
+}
+
+message GCPolicy {
+  bool all = 1;
+  int64 keepDuration = 2;
+  int64 reservedSpace = 3;
+  repeated string filters = 4;
+  int64 maxUsedSpace = 5;
+  int64 minFreeSpace = 6;
+}
+
+message CDIDevice {
+  string Name = 1;
+  bool AutoAllow = 2;
+  map<string, string> Annotations = 3;
+  bool OnDemand = 4;
+}
+
+message WorkerRecord {
+  string ID = 1;
+  map<string, string> Labels = 2;
+  repeated Platform platforms = 3;
+  repeated GCPolicy GCPolicy = 4;
+  BuildkitVersion BuildkitVersion = 5;
+  repeated CDIDevice CDIDevices = 6;
+}
