@@ -50,7 +50,7 @@ spec:
         - mountPath: /run/buildkit
           name: buildkit-socket-dir
     - name: buildkit-metrics-agent
-      image: buildkit-metrics-agent:latest
+      image: ghcr.io/builderhub/buildkit-metrics-agent:latest
       imagePullPolicy: Never
       securityContext:
         runAsUser: 1000
