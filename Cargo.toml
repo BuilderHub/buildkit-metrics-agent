@@ -1,5 +1,5 @@
 [package]
-name = "buildkit-agent"
+name = "buildkit-metrics-agent"
 version = "0.1.0"
 edition = "2021"
 description = "Sidecar agent that reports BuildKit metrics via gRPC"

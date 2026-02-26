@@ -24,7 +24,7 @@ use metrics::scrape_and_record;
 
 /// BuildKit reporting agent — gRPC sidecar for status/metrics (builds, cache, workers).
 #[derive(Parser, Debug)]
-#[command(name = "buildkit-agent")]
+#[command(name = "buildkit-metrics-agent")]
 struct Args {
     /// BuildKit gRPC endpoint (unix socket path or unix:///path)
     #[arg(
