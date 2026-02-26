@@ -11,6 +11,7 @@ service Control {
   rpc Info(InfoRequest) returns (InfoResponse);
   rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
   rpc DiskUsage(DiskUsageRequest) returns (DiskUsageResponse);
+  rpc ListenBuildHistory(BuildHistoryRequest) returns (stream BuildHistoryEvent);
 }
 
 // --- Types (wire-compatible with BuildKit api/types/worker.proto) ---
@@ -90,4 +91,43 @@ message UsageRecord {
   string RecordType = 10;
   bool Shared = 11;
   repeated string Parents = 12;
+}
+
+message BuildHistoryRequest {
+  bool ActiveOnly = 1;
+  string Ref = 2;
+  // EarlyExit: stream existing history then close (no tail).
+  bool EarlyExit = 3;
+}
+
+enum BuildHistoryEventType {
+  STARTED = 0;
+  COMPLETE = 1;
+  DELETED = 2;
+}
+
+message BuildHistoryEvent {
+  BuildHistoryEventType type = 1;
+  BuildHistoryRecord record = 2;
+}
+
+// Subset of BuildKit's BuildHistoryRecord — only fields needed for metrics.
+// Field numbers are wire-compatible with the upstream proto.
+message BuildHistoryRecord {
+  string Ref = 1;
+  string Frontend = 2;
+  // fields 3–4 (FrontendAttrs, Exporters) skipped
+  BuildError error = 5;
+  google.protobuf.Timestamp CreatedAt = 6;
+  google.protobuf.Timestamp CompletedAt = 7;
+  // fields 8–14 skipped
+  int32 numCachedSteps = 15;
+  int32 numTotalSteps = 16;
+  int32 numCompletedSteps = 17;
+}
+
+// Wire-compatible with google.rpc.Status (same field numbers).
+message BuildError {
+  int32 code = 1;
+  string message = 2;
 }

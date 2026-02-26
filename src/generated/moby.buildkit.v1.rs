@@ -127,6 +127,83 @@ pub struct UsageRecord {
     #[prost(string, repeated, tag = "12")]
     pub parents: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildHistoryRequest {
+    #[prost(bool, tag = "1")]
+    pub active_only: bool,
+    #[prost(string, tag = "2")]
+    pub r#ref: ::prost::alloc::string::String,
+    /// EarlyExit: stream existing history then close (no tail).
+    #[prost(bool, tag = "3")]
+    pub early_exit: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildHistoryEvent {
+    #[prost(enumeration = "BuildHistoryEventType", tag = "1")]
+    pub r#type: i32,
+    #[prost(message, optional, tag = "2")]
+    pub record: ::core::option::Option<BuildHistoryRecord>,
+}
+/// Subset of BuildKit's BuildHistoryRecord — only fields needed for metrics.
+/// Field numbers are wire-compatible with the upstream proto.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildHistoryRecord {
+    #[prost(string, tag = "1")]
+    pub r#ref: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub frontend: ::prost::alloc::string::String,
+    /// fields 3–4 (FrontendAttrs, Exporters) skipped
+    #[prost(message, optional, tag = "5")]
+    pub error: ::core::option::Option<BuildError>,
+    #[prost(message, optional, tag = "6")]
+    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag = "7")]
+    pub completed_at: ::core::option::Option<::prost_types::Timestamp>,
+    /// fields 8–14 skipped
+    #[prost(int32, tag = "15")]
+    pub num_cached_steps: i32,
+    #[prost(int32, tag = "16")]
+    pub num_total_steps: i32,
+    #[prost(int32, tag = "17")]
+    pub num_completed_steps: i32,
+}
+/// Wire-compatible with google.rpc.Status (same field numbers).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildError {
+    #[prost(int32, tag = "1")]
+    pub code: i32,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum BuildHistoryEventType {
+    Started = 0,
+    Complete = 1,
+    Deleted = 2,
+}
+impl BuildHistoryEventType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Started => "STARTED",
+            Self::Complete => "COMPLETE",
+            Self::Deleted => "DELETED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STARTED" => Some(Self::Started),
+            "COMPLETE" => Some(Self::Complete),
+            "DELETED" => Some(Self::Deleted),
+            _ => None,
+        }
+    }
+}
 /// Generated client implementations.
 pub mod control_client {
     #![allow(
@@ -289,6 +366,32 @@ pub mod control_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("moby.buildkit.v1.Control", "DiskUsage"));
             self.inner.unary(req, path, codec).await
+        }
+        pub async fn listen_build_history(
+            &mut self,
+            request: impl tonic::IntoRequest<super::BuildHistoryRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::BuildHistoryEvent>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/moby.buildkit.v1.Control/ListenBuildHistory",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("moby.buildkit.v1.Control", "ListenBuildHistory"),
+                );
+            self.inner.server_streaming(req, path, codec).await
         }
     }
 }

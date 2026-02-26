@@ -19,8 +19,9 @@ COPY tools ./tools
 
 RUN cargo build --release
 
-# Runtime: Chainguard minimal image for glibc binaries.
-FROM --platform=$TARGETPLATFORM cgr.dev/chainguard/glibc-dynamic:latest
+# Runtime: slim Debian image (provides libssl3 for dynamic OpenSSL linking).
+FROM --platform=$TARGETPLATFORM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/buildkit-agent /usr/local/bin/buildkit-agent
 
 ENV BUILDKIT_ADDR=unix:///run/buildkit/buildkitd.sock

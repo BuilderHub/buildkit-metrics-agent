@@ -9,10 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(false)
         .build_client(true)
         .out_dir(out_dir)
-        .compile_protos(
-            &["proto/moby/buildkit/v1/control.proto"],
-            &["proto"],
-        )?;
+        .compile_protos(&["proto/moby/buildkit/v1/control.proto"], &["proto"])?;
 
     // Tonic names the file from the package: moby.buildkit.v1 -> moby.buildkit.v1.rs
     // Add mod.rs so the main crate can use `mod generated`.

@@ -21,7 +21,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Metrics HTTP server (Prometheus scrape endpoint)
 axum = "0.7"
-metrics = "0.21"
+metrics = "0.22"
 metrics-exporter-prometheus = "0.13"
 
 # Config / env
