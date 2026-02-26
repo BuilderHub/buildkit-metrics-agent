@@ -1,0 +1,15 @@
+---
+name: On Push
+
+"on":
+  push: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - run: make build
+
+      - run: make docker
