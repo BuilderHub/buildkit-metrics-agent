@@ -34,6 +34,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/builderhub/buildkit-metrics-agent:latest
             ghcr.io/builderhub/buildkit-metrics-agent:${{ github.sha }}
