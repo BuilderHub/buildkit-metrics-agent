@@ -1,4 +1,4 @@
-# BuildKit reporting agent
+# BuildKit Metrics Agent
 
 Rust sidecar that connects to BuildKit over its gRPC socket and exposes **status metrics** (workers, cache, version) on a Prometheus scrape endpoint. Uses only the Control API (Info, ListWorkers, DiskUsage)—no full BuildKit client.
 
