@@ -10,7 +10,7 @@ jobs:
   build-and-push:
     uses: builderhub/actions/.github/workflows/buildah-build-push-workflow.yaml@v0.1.0-beta
     with:
-      image: ${{ github.repository }}
+      image: builderhub/buildkit-metrics-agent
       tags: latest ${{ github.sha }} ${{ github.event.release.tag_name }}
       containerfiles: ./Dockerfile
       context: .
