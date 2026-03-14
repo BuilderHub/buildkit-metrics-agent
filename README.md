@@ -1,6 +1,6 @@
 # BuildKit Metrics Agent
 
-Rust sidecar that connects to BuildKit over its gRPC socket and exposes **status metrics** (workers, cache, version) on a Prometheus scrape endpoint. Uses only the Control API (Info, ListWorkers, DiskUsage)—no full BuildKit client.
+Lightweight Rust application that scrapes and exposes BuildKit metrics via Prometheus.
 
 ```mermaid
 flowchart LR
@@ -11,6 +11,22 @@ flowchart LR
   BK -->|"gRPC (unix socket)"| A
   A -->|"GET /metrics"| P[Prometheus]
 ```
+
+## Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `buildkit_info` | gauge | `version`, `revision` | BuildKit version info (always `1`) |
+| `buildkit_workers_total` | gauge | | Number of active workers |
+| `buildkit_cache_records_total` | gauge | | Number of cache records |
+| `buildkit_cache_size_bytes` | gauge | | Total cache size in bytes |
+| `buildkit_cache_size_by_type_bytes` | gauge | `record_type` | Cache size in bytes by record type |
+| `buildkit_builds_total` | counter | | Total builds observed |
+| `buildkit_builds_succeeded_total` | counter | | Builds that completed successfully |
+| `buildkit_builds_failed_total` | counter | | Builds that failed |
+| `buildkit_builds_cached_steps_total` | counter | | Total cache-hit build steps |
+| `buildkit_builds_total_steps_total` | counter | | Total build steps |
+| `buildkit_build_duration_seconds` | histogram | | Build duration from created to completed |
 
 ## Dev setup
 
