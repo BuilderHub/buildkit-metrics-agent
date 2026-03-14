@@ -125,8 +125,6 @@ jobs:
       - build-and-test
       - e2e-kind
     runs-on: ubuntu-22.04
-    permissions:
-      metadata: read
     steps:
       - name: Verify all required jobs passed
         run: |
