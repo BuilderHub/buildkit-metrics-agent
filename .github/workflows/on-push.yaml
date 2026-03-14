@@ -84,22 +84,37 @@ jobs:
           import urllib.request
 
           url = "http://127.0.0.1:9090/metrics"
-          wanted = ("buildkit_builds_total", "buildkit_builds_succeeded_total")
+          wanted = (
+              "buildkit_builds_total",
+              "buildkit_builds_succeeded_total",
+              "buildkit_builds_failed_total",
+          )
           deadline = time.time() + 120
+          latest_body = ""
 
-          while time.time() < deadline:
-              body = urllib.request.urlopen(url, timeout=5).read().decode()
-              values = {}
-              for metric in wanted:
-                  m = re.search(rf"^{metric}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", body, re.M)
-                  if m:
-                      values[metric] = float(m.group(1))
+          try:
+              while time.time() < deadline:
+                  latest_body = urllib.request.urlopen(url, timeout=5).read().decode()
+                  values = {}
+                  for metric in wanted:
+                      m = re.search(rf"^{metric}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", latest_body, re.M)
+                      if m:
+                          values[metric] = float(m.group(1))
 
-              if all(metric in values for metric in wanted) and values["buildkit_builds_total"] >= 1 and values["buildkit_builds_succeeded_total"] >= 1:
-                  print("Metrics check passed:", values)
-                  break
+                  if (
+                      all(metric in values for metric in wanted)
+                      and values["buildkit_builds_total"] >= 1
+                      and values["buildkit_builds_succeeded_total"] >= 1
+                      and values["buildkit_builds_failed_total"] == 0
+                  ):
+                      print("Metrics check passed:", values)
+                      break
 
-              time.sleep(5)
-          else:
-              raise SystemExit("Expected build metrics were not observed within timeout")
+                  time.sleep(5)
+              else:
+                  raise SystemExit("Expected build metrics were not observed within timeout")
+          finally:
+              print("----- /metrics payload start -----")
+              print(latest_body.rstrip())
+              print("----- /metrics payload end -----")
           PY
