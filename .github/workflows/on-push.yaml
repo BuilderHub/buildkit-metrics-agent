@@ -5,7 +5,7 @@ name: On Push
   push: {}
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -13,5 +13,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - run: make build
+
+      - run: make test
 
       - run: make docker
