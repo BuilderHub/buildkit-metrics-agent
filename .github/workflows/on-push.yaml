@@ -4,11 +4,20 @@ name: On Push
 "on":
   push: {}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform }}
     permissions:
       contents: read
+    strategy:
+      matrix:
+        platform:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -17,3 +26,117 @@ jobs:
       - run: make test
 
       - run: make docker
+
+  e2e-kind:
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        platform:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: helm/kind-action@v1
+
+      - name: Build image for kind
+        run: docker build -t ghcr.io/builderhub/buildkit-metrics-agent:latest .
+
+      - name: Load image into kind
+        run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest --name chart-testing
+
+      - name: Deploy rootless + service example
+        run: kubectl apply -f "examples/kubernetes/rootless+service.yaml"
+
+      - name: Wait for buildkit pod readiness
+        run: kubectl wait --for=condition=ready pod/buildkitd --timeout=180s
+
+      - name: Port-forward services
+        run: |
+          kubectl port-forward service/buildkitd 1234:1234 >/tmp/pf-buildkitd.log 2>&1 &
+          kubectl port-forward service/buildkit-metrics-agent 9090:9090 >/tmp/pf-metrics.log 2>&1 &
+
+          for _ in $(seq 1 30); do
+            if curl -sSf "http://127.0.0.1:9090/metrics" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Port-forward did not become ready"
+          exit 1
+
+      - name: Run build via buildx on remote BuildKit
+        run: |
+          docker buildx create --name e2e-remote --driver remote tcp://127.0.0.1:1234 --use
+          docker buildx build --builder e2e-remote --progress plain --output type=cacheonly .
+
+      - name: Assert metrics expose build counters
+        run: |
+          python - <<'PY'
+          import re
+          import time
+          import urllib.request
+
+          url = "http://127.0.0.1:9090/metrics"
+          wanted = (
+              "buildkit_builds_total",
+              "buildkit_builds_succeeded_total",
+              "buildkit_builds_failed_total",
+          )
+          deadline = time.time() + 120
+          latest_body = ""
+
+          try:
+              while time.time() < deadline:
+                  latest_body = urllib.request.urlopen(url, timeout=5).read().decode()
+                  values = {}
+                  for metric in wanted:
+                      m = re.search(rf"^{metric}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", latest_body, re.M)
+                      if m:
+                          values[metric] = float(m.group(1))
+
+                  if (
+                      all(metric in values for metric in wanted)
+                      and values["buildkit_builds_total"] >= 1
+                      and values["buildkit_builds_succeeded_total"] >= 1
+                      and values["buildkit_builds_failed_total"] == 0
+                  ):
+                      print("Metrics check passed:", values)
+                      break
+
+                  time.sleep(5)
+              else:
+                  raise SystemExit("Expected build metrics were not observed within timeout")
+          finally:
+              print("----- /metrics payload start -----")
+              print(latest_body.rstrip())
+              print("----- /metrics payload end -----")
+          PY
+
+  all-green:
+    if: ${{ always() }}
+    needs:
+      - build-and-test
+      - e2e-kind
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          echo "build-and-test result: ${{ needs.build-and-test.result }}"
+          echo "e2e-kind result: ${{ needs.e2e-kind.result }}"
+
+          if [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
+            echo "::error::build-and-test did not succeed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.e2e-kind.result }}" != "success" ]]; then
+            echo "::error::e2e-kind did not succeed"
+            exit 1
+          fi
