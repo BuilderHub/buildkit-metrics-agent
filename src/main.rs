@@ -13,7 +13,7 @@ use anyhow::Result;
 use clap::Parser;
 use hyper_util::rt::TokioIo;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::UnixStream;
@@ -105,8 +105,8 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn scrape_once(socket_path: &PathBuf, seen_refs: Arc<Mutex<HashSet<String>>>) -> Result<()> {
-    let path = socket_path.clone();
+async fn scrape_once(socket_path: &Path, seen_refs: Arc<Mutex<HashSet<String>>>) -> Result<()> {
+    let path = socket_path.to_path_buf();
     let channel = Endpoint::try_from("http://[::]:0")?
         .connect_with_connector(service_fn(move |_: Uri| {
             let path = path.clone();
