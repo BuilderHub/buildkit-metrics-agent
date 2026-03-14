@@ -1,6 +1,6 @@
 # BuildKit Metrics Agent
 
-Lightweight Rust application that scrapes and exposes BuildKit metrics.
+A lightweight Rust application that scrapes and exposes BuildKit metrics.
 
 ```mermaid
 flowchart LR
