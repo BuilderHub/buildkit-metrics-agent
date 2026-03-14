@@ -30,7 +30,7 @@ flowchart LR
 
 ## Grafana
 
-A pre-built dashboard is provided at `[examples/grafana/buildkit-metrics-dashboard.json](examples/grafana/buildkit-metrics-dashboard.json)`.
+A pre-built dashboard is provided at [examples/grafana/buildkit-metrics-dashboard.json`](examples/grafana/buildkit-metrics-dashboard.json).
 
 **Import:** In Grafana, go to **Dashboards → Import**, upload the JSON file, and select your Prometheus datasource when prompted.
 
