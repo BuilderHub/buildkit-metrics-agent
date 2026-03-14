@@ -10,9 +10,14 @@ defaults:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform }}
     permissions:
       contents: read
+    strategy:
+      matrix:
+        platform:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -23,9 +28,14 @@ jobs:
       - run: make docker
 
   e2e-kind:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform }}
     permissions:
       contents: read
+    strategy:
+      matrix:
+        platform:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -38,7 +48,7 @@ jobs:
         run: docker build -t ghcr.io/builderhub/buildkit-metrics-agent:latest .
 
       - name: Load image into kind
-        run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest
+        run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest --name kind-chart-testing
 
       - name: Deploy rootless + service example
         run: kubectl apply -f "examples/kubernetes/rootless+service.yaml"
