@@ -48,7 +48,7 @@ jobs:
         run: docker build -t ghcr.io/builderhub/buildkit-metrics-agent:latest .
 
       - name: Load image into kind
-        run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest --name kind-chart-testing
+        run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest --name chart-testing
 
       - name: Deploy rootless + service example
         run: kubectl apply -f "examples/kubernetes/rootless+service.yaml"
