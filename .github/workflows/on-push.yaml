@@ -118,3 +118,27 @@ jobs:
               print(latest_body.rstrip())
               print("----- /metrics payload end -----")
           PY
+
+  all-green:
+    if: ${{ always() }}
+    needs:
+      - build-and-test
+      - e2e-kind
+    runs-on: ubuntu-22.04
+    permissions:
+      metadata: read
+    steps:
+      - name: Verify all required jobs passed
+        run: |
+          echo "build-and-test result: ${{ needs.build-and-test.result }}"
+          echo "e2e-kind result: ${{ needs.e2e-kind.result }}"
+
+          if [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
+            echo "::error::build-and-test did not succeed"
+            exit 1
+          fi
+
+          if [[ "${{ needs.e2e-kind.result }}" != "success" ]]; then
+            echo "::error::e2e-kind did not succeed"
+            exit 1
+          fi
