@@ -1,0 +1,40 @@
+# BuildKit + metrics-agent sidecar. Socket lives on a shared volume at
+# /shared/buildkit so we don't replace BuildKit's own /run/buildkit.
+# privileged: true so runc process sandbox can bind-mount (normal BuildKit behavior).
+#
+# Usage: docker compose up -d
+# Metrics: http://localhost:9090/metrics
+# buildx: docker buildx create --driver remote tcp://localhost:1234 --use
+# Build with --load to load image: docker buildx build --load -f Dockerfile ..
+
+services:
+  buildkit:
+    image: moby/buildkit:latest
+    privileged: true
+    volumes:
+      - buildkit-socket:/shared/buildkit
+    command:
+      - --addr
+      - unix:///shared/buildkit/buildkitd.sock
+      - --addr
+      - tcp://0.0.0.0:1234
+    ports:
+      - "1234:1234"
+    restart: unless-stopped
+
+  metrics-agent:
+    build: .
+    depends_on:
+      - buildkit
+    volumes:
+      - buildkit-socket:/shared/buildkit
+    environment:
+      BUILDKIT_ADDR: unix:///shared/buildkit/buildkitd.sock
+      METRICS_ADDR: 0.0.0.0:9090
+      RUST_LOG: ${RUST_LOG:-buildkit_metrics_agent=debug}
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+volumes:
+  buildkit-socket:

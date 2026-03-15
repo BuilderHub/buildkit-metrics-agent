@@ -2,10 +2,7 @@
 # Expects src/generated/ to exist (run `make generate` first and commit, or generate in CI).
 # Multi-arch: build with buildx for linux/amd64 or linux/arm64 (e.g. --platform linux/amd64,linux/arm64).
 
-ARG TARGETOS
-ARG TARGETARCH
-ARG TARGETPLATFORM
-FROM --platform=$TARGETPLATFORM rust:1-bookworm AS builder
+FROM rust:1-bookworm AS builder
 WORKDIR /build
 # OpenSSL dev headers/libs for openssl-sys (tonic/hyper).
 RUN apt-get update && apt-get install -y --no-install-recommends libssl-dev pkg-config && rm -rf /var/lib/apt/lists/*
@@ -20,7 +17,7 @@ COPY tools ./tools
 RUN cargo build --release
 
 # Runtime: slim Debian image (provides libssl3 for dynamic OpenSSL linking).
-FROM --platform=$TARGETPLATFORM debian:bookworm-slim
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/buildkit-metrics-agent /usr/local/bin/buildkit-metrics-agent
 

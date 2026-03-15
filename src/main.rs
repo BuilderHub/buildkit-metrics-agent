@@ -1,5 +1,6 @@
-//! BuildKit reporting agent: sidecar that talks to BuildKit over gRPC (Control API only)
-//! and exposes metrics for builds, cache, and workers.
+//! BuildKit metrics agent: application that connects to BuildKit over gRPC (Control API,
+//! unix socket), periodically scrapes info, workers, cache, and build history, and
+//! serves Prometheus metrics at `GET /metrics`.
 
 mod generated;
 mod metrics;
@@ -22,7 +23,7 @@ use tower::service_fn;
 
 use metrics::scrape_and_record;
 
-/// BuildKit reporting agent — gRPC sidecar for status/metrics (builds, cache, workers).
+/// BuildKit Metrics Agent — a lightweight application that scrapes and exposes BuildKit metrics.
 #[derive(Parser, Debug)]
 #[command(name = "buildkit-metrics-agent")]
 struct Args {
