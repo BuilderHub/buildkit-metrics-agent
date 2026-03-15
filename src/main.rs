@@ -22,7 +22,7 @@ use tower::service_fn;
 
 use metrics::scrape_and_record;
 
-/// BuildKit reporting agent — gRPC sidecar for status/metrics (builds, cache, workers).
+/// BuildKit Metrics Agent — a lightweight application that scrapes and exposes BuildKit metrics.
 #[derive(Parser, Debug)]
 #[command(name = "buildkit-metrics-agent")]
 struct Args {

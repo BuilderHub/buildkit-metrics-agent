@@ -63,7 +63,7 @@ cargo run --release --   # or: make run
 
 Config (env or flags): `BUILDKIT_ADDR` (default `unix:///run/buildkit/buildkitd.sock`), `METRICS_ADDR` (default `0.0.0.0:9090`), `SCRAPE_INTERVAL_SECS` (default `15`).
 
-## Image Build
+### Image Build
 
 Generated code must exist in `src/generated/` (run `make generate` and commit, or run codegen in CI before `docker build`). The Dockerfile is multi-arch: it builds for the target platform (`linux/amd64` or `linux/arm64`) via BuildKit `TARGETPLATFORM`.
 
@@ -80,7 +80,26 @@ docker buildx build --platform linux/amd64,linux/arm64 -t buildkit-metrics-agent
 # or: make docker-multi
 ```
 
-## Kubernetes
+## Demo
+
+### Docker Compose
+
+Start BuildKit and the metrics agent (socket at `/shared/buildkit`, TCP on 1234 for buildx):
+
+```bash
+docker compose up -d
+```
+
+Use the remote builder and run a build (optional):
+
+```bash
+docker buildx create --driver remote tcp://localhost:1234 --use
+docker buildx build --load -t myimage:latest -f Dockerfile .
+```
+
+**Metrics in browser:** [http://localhost:9090/metrics](http://localhost:9090/metrics)
+
+### Kubernetes
 
 Deploy as a sidecar next to BuildKit using the provided example:
 
