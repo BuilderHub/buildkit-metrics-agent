@@ -29,9 +29,9 @@
         "x": 0,
         "y": 0
       },
-      "id": 1,
+      "id": 59,
       "panels": [],
-      "title": "Overview (selected time range)",
+      "title": "Overall Health (now)",
       "type": "row"
     },
     {
@@ -39,6 +39,7 @@
         "type": "prometheus",
         "uid": "fdokero3r2i9se"
       },
+      "description": "The number of builders online right now",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -55,9 +56,246 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 6,
         "x": 0,
         "y": 1
+      },
+      "id": 60,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "count((sum by (pod) (buildkit_workers_total{namespace=~\"$namespace\",pod=~\"$pod\"}) > 0))",
+          "legendFormat": "Builders online (now)",
+          "refId": "A"
+        }
+      ],
+      "title": "Builders online",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 61,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50 build duration (now)",
+          "refId": "A"
+        }
+      ],
+      "title": "P50 Build Duration (now)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 62,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p95 build duration (now)",
+          "refId": "A"
+        }
+      ],
+      "title": "P95 Build Duration (now)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 63,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99 build duration (now)",
+          "refId": "A"
+        }
+      ],
+      "title": "P99 Build Duration (now)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 1,
+      "panels": [],
+      "title": "Overview (selected time range)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "description": "The total number of image builds submitted within the time range",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 6
       },
       "id": 2,
       "options": {
@@ -85,7 +323,7 @@
           "refId": "A"
         }
       ],
-      "title": "Builds (range)",
+      "title": "Builds Submitted",
       "type": "stat"
     },
     {
@@ -93,6 +331,7 @@
         "type": "prometheus",
         "uid": "fdokero3r2i9se"
       },
+      "description": "The number of successful image builds in the time range",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -109,9 +348,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 1
+        "w": 5,
+        "x": 5,
+        "y": 6
       },
       "id": 3,
       "options": {
@@ -139,7 +378,7 @@
           "refId": "A"
         }
       ],
-      "title": "Succeeded (range)",
+      "title": "Succeeded Builds",
       "type": "stat"
     },
     {
@@ -147,6 +386,7 @@
         "type": "prometheus",
         "uid": "fdokero3r2i9se"
       },
+      "description": "The number of failed image builds in the specified range",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -168,8 +408,8 @@
       "gridPos": {
         "h": 4,
         "w": 4,
-        "x": 8,
-        "y": 1
+        "x": 10,
+        "y": 6
       },
       "id": 4,
       "options": {
@@ -197,7 +437,7 @@
           "refId": "A"
         }
       ],
-      "title": "Failed (range)",
+      "title": "Failed Builds",
       "type": "stat"
     },
     {
@@ -205,6 +445,7 @@
         "type": "prometheus",
         "uid": "fdokero3r2i9se"
       },
+      "description": "Image build success rate",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -221,9 +462,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 1
+        "w": 5,
+        "x": 14,
+        "y": 6
       },
       "id": 5,
       "options": {
@@ -251,7 +492,7 @@
           "refId": "A"
         }
       ],
-      "title": "Success rate (%)",
+      "title": "Success Rate (%)",
       "type": "stat"
     },
     {
@@ -259,6 +500,7 @@
         "type": "prometheus",
         "uid": "fdokero3r2i9se"
       },
+      "description": "Size of all the builder caches combined",
       "fieldConfig": {
         "defaults": {
           "mappings": [],
@@ -276,9 +518,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 1
+        "w": 5,
+        "x": 19,
+        "y": 6
       },
       "id": 6,
       "options": {
@@ -306,7 +548,7 @@
           "refId": "A"
         }
       ],
-      "title": "Cache size (now)",
+      "title": "Aggregate Cache Size",
       "type": "stat"
     },
     {
@@ -324,17 +566,18 @@
                 "color": "green"
               }
             ]
-          }
+          },
+          "unit": "s"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 1
+        "w": 6,
+        "x": 0,
+        "y": 10
       },
-      "id": 7,
+      "id": 54,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -355,12 +598,182 @@
       "pluginVersion": "12.0.2",
       "targets": [
         {
-          "expr": "sum(buildkit_workers_total{namespace=~\"$namespace\",pod=~\"$pod\"})",
-          "legendFormat": "workers",
+          "editorMode": "code",
+          "expr": "(sum(increase(buildkit_build_duration_seconds_sum{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range]))) / clamp_min(sum(increase(buildkit_build_duration_seconds_count{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])), 1)",
+          "legendFormat": "avg build duration (range)",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Workers (now)",
+      "title": "Average Build Duration (range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 10
+      },
+      "id": 64,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(increase(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (le))",
+          "legendFormat": "p50 build duration (range)",
+          "refId": "A"
+        }
+      ],
+      "title": "P50 Build Duration (range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 10
+      },
+      "id": 65,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(increase(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (le))",
+          "legendFormat": "p95 build duration (range)",
+          "refId": "A"
+        }
+      ],
+      "title": "P95 Build Duration (range)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 10
+      },
+      "id": 66,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(increase(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (le))",
+          "legendFormat": "p99 build duration (range)",
+          "refId": "A"
+        }
+      ],
+      "title": "P99 Build Duration (range)",
       "type": "stat"
     },
     {
@@ -369,11 +782,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 14
       },
       "id": 10,
       "panels": [],
-      "title": "Rates & trends",
+      "title": "Rates & Trends",
       "type": "row"
     },
     {
@@ -439,7 +852,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 6
+        "y": 15
       },
       "id": 11,
       "options": {
@@ -534,7 +947,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 6
+        "y": 15
       },
       "id": 12,
       "options": {
@@ -567,16 +980,119 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 55,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[15m])) by (le))",
+          "legendFormat": "p50",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[15m])) by (le))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[15m])) by (le))",
+          "legendFormat": "p99",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Build duration quantiles (over time)",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 13
+        "y": 30
       },
       "id": 20,
       "panels": [],
-      "title": "Per-pod breakdown (descending)",
+      "title": "Builder Breakdown (descending)",
       "type": "row"
     },
     {
@@ -630,7 +1146,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 31
       },
       "id": 21,
       "options": {
@@ -721,7 +1237,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 31
       },
       "id": 22,
       "options": {
@@ -813,7 +1329,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 39
       },
       "id": 23,
       "options": {
@@ -904,7 +1420,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 39
       },
       "id": 24,
       "options": {
@@ -945,16 +1461,192 @@
       "type": "barchart"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 47
+      },
+      "id": 56,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.97,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "topk($topk, histogram_quantile(0.95, sum(rate(buildkit_build_duration_seconds_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (le,pod)))",
+          "instant": true,
+          "legendFormat": "{{pod}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Top pods by p95 build duration (range)",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "fdokero3r2i9se"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 47
+      },
+      "id": 57,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.97,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "topk($topk, (sum(increase(buildkit_build_duration_seconds_sum{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (pod)) / clamp_min(sum(increase(buildkit_build_duration_seconds_count{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (pod), 1))",
+          "instant": true,
+          "legendFormat": "{{pod}}",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Top pods by avg build duration (range)",
+      "type": "barchart"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 55
       },
       "id": 30,
       "panels": [],
-      "title": "Pod Summary table",
+      "title": "Builder Summary Table",
       "type": "row"
     },
     {
@@ -1021,6 +1713,30 @@
                 "value": "percentunit"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "avg_build_duration_s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p95_build_duration_s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
           }
         ]
       },
@@ -1028,7 +1744,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 56
       },
       "id": 31,
       "options": {
@@ -1114,9 +1830,25 @@
           "instant": true,
           "range": false,
           "refId": "H"
+        },
+        {
+          "editorMode": "code",
+          "expr": "(sum(increase(buildkit_build_duration_sum{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (pod)) / clamp_min((sum(increase(buildkit_build_duration_count{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (pod)), 1)",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "I"
+        },
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(buildkit_build_duration_bucket{namespace=~\"$namespace\",pod=~\"$pod\"}[$__range])) by (le,pod))",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "J"
         }
       ],
-      "title": "Pod Summary (cache + builds + steps + workers)",
+      "title": "Builder Summary (builds + steps + cache + rates)",
       "transformations": [
         {
           "id": "joinByField",
@@ -1142,7 +1874,9 @@
               "Value #E": "total_steps_range",
               "Value #F": "cache_size_bytes",
               "Value #G": "cache_records_total",
-              "Value #H": "workers_now"
+              "Value #H": "workers_now",
+              "Value #I": "avg_build_duration_s",
+              "Value #J": "p95_build_duration_s"
             }
           }
         },
@@ -1260,11 +1994,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 68
       },
       "id": 40,
       "panels": [],
-      "title": "Cache breakdown",
+      "title": "Cache Type Breakdown",
       "type": "row"
     },
     {
@@ -1304,10 +2038,6 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           },
@@ -1319,7 +2049,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 69
       },
       "id": 41,
       "options": {
@@ -1488,7 +2218,7 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {
@@ -1503,5 +2233,5 @@
   "timezone": "",
   "title": "Shared Builders - BuildKit Metrics",
   "uid": "ff155793-8840-48ab-aa6b-1534adebd225",
-  "version": 15
+  "version": 52
 }
