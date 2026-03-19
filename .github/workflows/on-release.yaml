@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-push:
-    uses: builderhub/actions/.github/workflows/buildah-build-push-workflow.yaml@v0.1.0-beta
+    uses: builderhub/actions/.github/workflows/buildah-build-push-workflow.yaml@v0.1.0-beta.2
     with:
       image: builderhub/buildkit-metrics-agent
       tags: latest ${{ github.sha }} ${{ github.event.release.tag_name }}
@@ -16,6 +16,16 @@ jobs:
       context: .
       registry: ghcr.io
       push: true
+      annotations: |
+        org.opencontainers.image.source=https://github.com/builderhub/buildkit-metrics-agent
+        org.opencontainers.image.description=A lightweight Rust application that scrapes and exposes BuildKit metrics.
+        org.opencontainers.image.licenses=MIT
+        org.opencontainers.image.authors=BuilderHub
+        org.opencontainers.image.url=https://github.com/builderhub/buildkit-metrics-agent
+        org.opencontainers.image.documentation=https://github.com/builderhub/buildkit-metrics-agent/blob/main/README.md
+        org.opencontainers.image.vendor=BuilderHub
+        org.opencontainers.image.version=${{ github.event.release.tag_name }}
+        org.opencontainers.image.revision=${{ github.sha }}
     secrets:
       REGISTRY_USERNAME: ${{ github.actor }}
       REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
