@@ -15,7 +15,10 @@
           overlays = [ rust-overlay.overlays.default ];
         };
         toolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" ];
+          extensions = [
+            "rust-src"
+            "llvm-tools-preview"
+          ];
           targets = [ "x86_64-unknown-linux-musl" ];
         };
       in
@@ -23,6 +26,7 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             toolchain
+            cargo-llvm-cov
             protobuf
             pkg-config
             openssl

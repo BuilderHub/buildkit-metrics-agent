@@ -10,6 +10,7 @@ authors = ["BuilderHub"]
 members = ["tools/codegen"]
 
 [dependencies]
+async-trait = "0.1"
 # gRPC (Control API only: info, workers, disk usage)
 tonic = "0.12"
 prost = "0.13"

@@ -2,6 +2,7 @@
 
 use crate::generated::{BuildHistoryRecord, DiskUsageResponse, InfoResponse, ListWorkersResponse};
 use metrics_exporter_prometheus::{Matcher, PrometheusHandle};
+use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
@@ -26,14 +27,7 @@ pub fn install_recorder() -> PrometheusHandle {
         .clone()
 }
 
-/// Update gauges/counters from the latest Control API scrape.
-pub fn scrape_and_record(
-    info: InfoResponse,
-    workers: ListWorkersResponse,
-    disk: DiskUsageResponse,
-    builds: Vec<BuildHistoryRecord>,
-) {
-    // BuildKit version info (we expose as labels or info metric)
+fn record_info(info: &InfoResponse) {
     if let Some(v) = info.buildkit_version.as_ref() {
         metrics::gauge!(
             "buildkit_info",
@@ -42,19 +36,18 @@ pub fn scrape_and_record(
         )
         .set(1.0);
     }
+}
 
-    // Worker count
-    let n = workers.record.len() as f64;
-    metrics::gauge!("buildkit_workers_total").set(n);
+fn record_workers(workers: &ListWorkersResponse) {
+    metrics::gauge!("buildkit_workers_total").set(workers.record.len() as f64);
+}
 
-    // Cache / disk usage: total size and record count
-    let total_size: i64 = disk.record.iter().map(|r| r.size).sum();
-    let count = disk.record.len() as f64;
-    metrics::gauge!("buildkit_cache_records_total").set(count);
+fn record_disk(disk: &DiskUsageResponse) {
+    let total_size: i64 = disk.record.iter().map(|r| r.size).sum::<i64>();
+    metrics::gauge!("buildkit_cache_records_total").set(disk.record.len() as f64);
     metrics::gauge!("buildkit_cache_size_bytes").set(total_size as f64);
 
-    // Size by record type (e.g. snapshot, content)
-    let mut by_type: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut by_type: HashMap<String, i64> = HashMap::new();
     for r in &disk.record {
         let t = if r.record_type.is_empty() {
             "unknown".to_string()
@@ -70,9 +63,25 @@ pub fn scrape_and_record(
         )
         .set(size as f64);
     }
+}
 
-    // Increment counters only for builds not yet seen — callers pass only new records.
-    for r in &builds {
+fn record_build_duration_if_valid(r: &BuildHistoryRecord) {
+    let (Some(created), Some(completed)) = (&r.created_at, &r.completed_at) else {
+        return;
+    };
+    let Ok(created) = SystemTime::try_from(*created) else {
+        return;
+    };
+    let Ok(completed) = SystemTime::try_from(*completed) else {
+        return;
+    };
+    if let Ok(duration) = completed.duration_since(created) {
+        metrics::histogram!("buildkit_build_duration_seconds").record(duration.as_secs_f64());
+    }
+}
+
+fn record_build_counters(builds: &[BuildHistoryRecord]) {
+    for r in builds {
         let (succeeded, failed) = if r.error.as_ref().is_some_and(|e| e.code != 0) {
             (0u64, 1u64)
         } else {
@@ -85,15 +94,21 @@ pub fn scrape_and_record(
             .increment(r.num_cached_steps as u64);
         metrics::counter!("buildkit_builds_total_steps_total").increment(r.num_total_steps as u64);
 
-        if let (Some(created), Some(completed)) = (&r.created_at, &r.completed_at) {
-            let Ok(created) = SystemTime::try_from(*created) else { continue };
-            let Ok(completed) = SystemTime::try_from(*completed) else { continue };
-            if let Ok(duration) = completed.duration_since(created) {
-                metrics::histogram!("buildkit_build_duration_seconds")
-                    .record(duration.as_secs_f64());
-            }
-        }
+        record_build_duration_if_valid(r);
     }
+}
+
+/// Update gauges/counters from the latest Control API scrape.
+pub fn scrape_and_record(
+    info: InfoResponse,
+    workers: ListWorkersResponse,
+    disk: DiskUsageResponse,
+    builds: Vec<BuildHistoryRecord>,
+) {
+    record_info(&info);
+    record_workers(&workers);
+    record_disk(&disk);
+    record_build_counters(&builds);
 }
 
 #[cfg(test)]
