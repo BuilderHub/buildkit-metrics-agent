@@ -52,7 +52,7 @@ jobs:
 
       - uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           files: codecov.json
           fail_ci_if_error: true
 
