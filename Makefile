@@ -1,6 +1,6 @@
 # BuildKit metrics agent
 
-.PHONY: help generate build run test docker docker-multi
+.PHONY: help generate build run test coverage docker docker-multi
 .DEFAULT_GOAL := help
 
 help: ## Show this help
@@ -18,6 +18,12 @@ run: build ## Build and run the agent
 test: ## Run tests and clippy lints
 	cargo test
 	cargo clippy -- -D warnings
+
+coverage: ## Run tests under cargo-llvm-cov; excludes src/generated from the report
+	@command -v cargo-llvm-cov >/dev/null 2>&1 || { echo "cargo-llvm-cov not in PATH (use nix develop)"; exit 1; }
+	cargo llvm-cov test -p buildkit-metrics-agent \
+		--ignore-filename-regex '.*/src/generated/.*' \
+		--fail-under-lines 90
 
 docker: ## Build Docker image (single arch)
 	docker build -t buildkit-metrics-agent .
