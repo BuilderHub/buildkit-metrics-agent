@@ -1,4 +1,4 @@
-# BuildKit reporting agent — multi-stage build
+# BuildKit metrics agent — multi-stage build
 # Expects src/generated/ to exist (run `make generate` first and commit, or generate in CI).
 # Multi-arch: build with buildx for linux/amd64 or linux/arm64 (e.g. --platform linux/amd64,linux/arm64).
 
@@ -26,3 +26,4 @@ ENV METRICS_ADDR=0.0.0.0:9090
 
 EXPOSE 9090
 ENTRYPOINT ["/usr/local/bin/buildkit-metrics-agent"]
+
