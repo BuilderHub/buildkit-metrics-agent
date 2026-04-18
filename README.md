@@ -1,6 +1,6 @@
 # BuildKit Metrics Agent
 
-[![codecov](https://codecov.io/gh/BuilderHub/buildkit-metrics-agent/graph/badge.svg?token=J5WFX7B2QA)](https://codecov.io/gh/BuilderHub/buildkit-metrics-agent) [![On Push](https://github.com/BuilderHub/buildkit-metrics-agent/actions/workflows/on-push.yaml/badge.svg)](https://github.com/BuilderHub/buildkit-metrics-agent/actions/workflows/on-push.yaml)
+[![codecov](https://codecov.io/gh/BuilderHub/buildkit-metrics-agent/graph/badge.svg?token=J5WFX7B2QA)](https://codecov.io/gh/BuilderHub/buildkit-metrics-agent)&nbsp;[![On Push](https://github.com/BuilderHub/buildkit-metrics-agent/actions/workflows/on-push.yaml/badge.svg)](https://github.com/BuilderHub/buildkit-metrics-agent/actions/workflows/on-push.yaml)
 
 A lightweight Rust application that scrapes and exposes BuildKit metrics.
 
