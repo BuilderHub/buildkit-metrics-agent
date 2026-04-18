@@ -21,11 +21,40 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - run: make build
+      - uses: DeterminateSystems/nix-installer-action@v22
 
-      - run: make test
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
 
-      - run: make docker
+      - name: Build
+        run: nix develop --command make build
+
+      - name: Test and clippy
+        run: nix develop --command make test
+
+      - name: Docker image
+        run: nix develop --command make docker
+
+  upload-coverage:
+    needs: build-and-test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Generate coverage (Codecov format)
+        run: nix develop --command make coverage
+
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: codecov.json
+          fail_ci_if_error: true
 
   e2e-kind:
     runs-on: ${{ matrix.platform }}
@@ -124,12 +153,14 @@ jobs:
     needs:
       - build-and-test
       - e2e-kind
+      - upload-coverage
     runs-on: ubuntu-22.04
     steps:
       - name: Verify all required jobs passed
         run: |
           echo "build-and-test result: ${{ needs.build-and-test.result }}"
           echo "e2e-kind result: ${{ needs.e2e-kind.result }}"
+          echo "upload-coverage result: ${{ needs.upload-coverage.result }}"
 
           if [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
             echo "::error::build-and-test did not succeed"
@@ -140,3 +171,9 @@ jobs:
             echo "::error::e2e-kind did not succeed"
             exit 1
           fi
+
+          if [[ "${{ needs.upload-coverage.result }}" != "success" ]]; then
+            echo "::error::upload-coverage did not succeed"
+            exit 1
+          fi
+
