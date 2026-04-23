@@ -1,4 +1,8 @@
 //! BuildKit metrics agent library: gRPC scrape loop and Prometheus `/metrics` serving.
+//!
+//! On process shutdown (Ctrl+C or HTTP server exit), a [`tokio::sync::watch`] flag stops the
+//! [`supervised_scrape_loop`], which aborts the inner [`scrape_loop`] task; the supervisor does not
+//! respawn after that.
 
 pub mod generated;
 pub mod metrics;
@@ -19,6 +23,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::UnixStream;
+use tokio::sync::watch;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tower::service_fn;
 
@@ -57,6 +62,123 @@ pub async fn run() -> Result<()> {
     run_with(Args::parse()).await
 }
 
+/// Time to wait after the inner [`scrape_loop`] task panics, returns, or is cancelled (without
+/// shutdown) before respawning.
+const SUPERVISOR_BACKOFF: Duration = Duration::from_secs(1);
+
+/// `true` means stop [`supervised_scrape_loop`]; `false` means wait finished and a new child may
+/// be spawned.
+async fn supervisor_backoff_or_stop(shutdown_rx: &mut watch::Receiver<bool>, d: Duration) -> bool {
+    let sleep = tokio::time::sleep(d);
+    tokio::pin!(sleep);
+    loop {
+        tokio::select! {
+            biased;
+            c = shutdown_rx.changed() => {
+                if c.is_err() {
+                    // All senders dropped; process is stopping.
+                    return true;
+                }
+                if *shutdown_rx.borrow() {
+                    return true;
+                }
+            }
+            _ = &mut sleep => {
+                return false;
+            }
+        }
+    }
+}
+
+/// Respawns the inner [`scrape_loop`] when it panics or exits, until `shutdown_rx` is `true` or
+/// the sender is dropped.
+async fn supervised_scrape_loop(
+    path: PathBuf,
+    seen_refs: Arc<Mutex<HashSet<String>>>,
+    scrape_interval: Duration,
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    loop {
+        if *shutdown_rx.borrow() {
+            return;
+        }
+        let mut child = tokio::spawn(scrape_loop(
+            path.clone(),
+            Arc::clone(&seen_refs),
+            scrape_interval,
+        ));
+        let child_abort = child.abort_handle();
+
+        let res = 'join: loop {
+            tokio::select! {
+                // Shutdown first when both the inner task and a watch notification are ready.
+                biased;
+                c = shutdown_rx.changed() => {
+                    if c.is_err() {
+                        // All senders dropped; process is stopping.
+                        child_abort.abort();
+                        return;
+                    }
+                    if *shutdown_rx.borrow() {
+                        child_abort.abort();
+                        // Wait for the inner task to complete so the JoinHandle is not leaked.
+                        let r = child.await;
+                        break 'join r;
+                    }
+                }
+                r = &mut child => {
+                    break 'join r;
+                }
+            }
+        };
+
+        if *shutdown_rx.borrow() {
+            if let Err(e) = &res {
+                if e.is_cancelled() {
+                    return;
+                }
+            }
+        }
+
+        match res {
+            Ok(()) => {
+                tracing::error!("scrape_loop task exited without error; restarting after backoff");
+                if supervisor_backoff_or_stop(&mut shutdown_rx, SUPERVISOR_BACKOFF).await {
+                    return;
+                }
+            }
+            Err(e) if e.is_panic() => {
+                match e.try_into_panic() {
+                    Ok(payload) => {
+                        tracing::error!(?payload, "scrape_loop task panicked; restarting after backoff");
+                    }
+                    Err(_) => {
+                        tracing::error!("scrape_loop task panicked; restarting after backoff");
+                    }
+                }
+                if supervisor_backoff_or_stop(&mut shutdown_rx, SUPERVISOR_BACKOFF).await {
+                    return;
+                }
+            }
+            Err(e) if e.is_cancelled() => {
+                if *shutdown_rx.borrow() {
+                    return;
+                }
+                tracing::warn!("scrape_loop task cancelled unexpectedly; restarting after backoff");
+                if supervisor_backoff_or_stop(&mut shutdown_rx, SUPERVISOR_BACKOFF).await {
+                    return;
+                }
+            }
+            Err(e) => {
+                tracing::error!(%e, "scrape_loop task failed; restarting after backoff");
+                if supervisor_backoff_or_stop(&mut shutdown_rx, SUPERVISOR_BACKOFF).await {
+                    return;
+                }
+            }
+        }
+    }
+}
+
 pub(crate) async fn run_with(args: Args) -> Result<()> {
     let path = socket_path_from_addr(&args.addr);
     let metrics_handle = metrics::install_recorder();
@@ -64,32 +186,57 @@ pub(crate) async fn run_with(args: Args) -> Result<()> {
 
     let seen_refs: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    tokio::spawn(scrape_loop(
-        path.clone(),
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    let listener = tokio::net::TcpListener::bind(&args.metrics_addr)
+        .await
+        .with_context(|| format!("bind metrics listener on {}", args.metrics_addr))?;
+
+    let supervisor = tokio::spawn(supervised_scrape_loop(
+        path,
         Arc::clone(&seen_refs),
         scrape_interval,
+        shutdown_rx,
     ));
 
-    serve_metrics(&args.metrics_addr, metrics_handle).await
+    // Graceful stop of the HTTP server: Ctrl+C completes this future, then axum drains.
+    let http_shutdown = async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutting down");
+    };
+
+    let serve_result = serve_metrics_from_listener(listener, metrics_handle, http_shutdown).await;
+
+    // Stops the supervisor from respawning; the supervisor also aborts the inner scrape in select!.
+    // Await the supervisor so the inner `scrape_loop` is joined (Tokio does not drop child tasks when
+    // a parent is cancelled).
+    let _ = shutdown_tx.send(true);
+    let _ = supervisor.await;
+    serve_result
 }
 
+#[cfg(test)]
 async fn serve_metrics(addr: &str, handle: PrometheusHandle) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind metrics listener on {addr}"))?;
-    serve_metrics_from_listener(listener, handle).await
+    // Never signal shutdown from axum: tests and callers rely on task abort to stop the server.
+    serve_metrics_from_listener(listener, handle, std::future::pending::<()>()).await
 }
 
 pub(crate) async fn serve_metrics_from_listener(
     listener: tokio::net::TcpListener,
     handle: PrometheusHandle,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     tracing::info!(
         addr = %listener.local_addr().context("metrics listener local_addr")?,
         "metrics listening"
     );
     let app = metrics_router(handle);
-    axum::serve(listener, app.into_make_service()).await?;
+    axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown)
+        .await?;
     Ok(())
 }
 
@@ -523,7 +670,11 @@ mod tests {
         let addr = listener.local_addr().expect("addr");
         let rec = PrometheusBuilder::new().build_recorder();
         let handle = rec.handle();
-        let server = tokio::spawn(serve_metrics_from_listener(listener, handle));
+        let server = tokio::spawn(serve_metrics_from_listener(
+            listener,
+            handle,
+            std::future::pending::<()>(),
+        ));
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let mut stream = tokio::net::TcpStream::connect(addr)
