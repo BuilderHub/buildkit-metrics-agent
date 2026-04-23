@@ -180,6 +180,22 @@ async fn supervised_scrape_loop(
 }
 
 pub(crate) async fn run_with(args: Args) -> Result<()> {
+    run_with_graceful(
+        args,
+        async {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("shutting down");
+        },
+    )
+    .await
+}
+
+/// Same as [`run_with`], but the HTTP server’s graceful-shutdown signal is supplied for tests or
+/// embedding (e.g. `std::future::ready(())` to stop immediately).
+pub(crate) async fn run_with_graceful(
+    args: Args,
+    http_shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     let path = socket_path_from_addr(&args.addr);
     let metrics_handle = metrics::install_recorder();
     let scrape_interval = Duration::from_secs(args.scrape_interval_secs);
@@ -198,12 +214,6 @@ pub(crate) async fn run_with(args: Args) -> Result<()> {
         scrape_interval,
         shutdown_rx,
     ));
-
-    // Graceful stop of the HTTP server: Ctrl+C completes this future, then axum drains.
-    let http_shutdown = async {
-        let _ = tokio::signal::ctrl_c().await;
-        tracing::info!("shutting down");
-    };
 
     let serve_result = serve_metrics_from_listener(listener, metrics_handle, http_shutdown).await;
 
@@ -691,5 +701,90 @@ mod tests {
         let head = String::from_utf8_lossy(&buf[..n]);
         assert!(head.contains("200 OK"), "response: {head:?}");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn supervisor_backoff_or_stop_completes_sleep_without_shutdown() {
+        let (_tx, mut rx) = watch::channel(false);
+        let out = super::supervisor_backoff_or_stop(
+            &mut rx,
+            Duration::from_millis(40),
+        )
+        .await;
+        assert!(!out, "expected sleep to complete without stop");
+    }
+
+    #[tokio::test]
+    async fn supervisor_backoff_or_stop_stops_on_watch_true_before_sleep_ends() {
+        let (tx, mut rx) = watch::channel(false);
+        let t = tx.clone();
+        let wake = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            t.send(true).expect("send");
+        });
+        let out = super::supervisor_backoff_or_stop(
+            &mut rx,
+            Duration::from_secs(2),
+        )
+        .await;
+        let _ = wake.await;
+        assert!(out, "expected shutdown to win over long sleep");
+    }
+
+    #[tokio::test]
+    async fn supervisor_backoff_or_stop_stops_when_watch_sender_dropped() {
+        let (tx, mut rx) = watch::channel(false);
+        drop(tx);
+        let out = super::supervisor_backoff_or_stop(
+            &mut rx,
+            Duration::from_secs(10),
+        )
+        .await;
+        assert!(out, "expected RecvError path when all senders dropped");
+    }
+
+    #[tokio::test]
+    async fn supervised_scrape_loop_stops_on_watch() {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let path = PathBuf::from("/tmp/buildkit-metrics-agent-coverage-supervised.sock");
+        let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let sup = tokio::spawn(super::supervised_scrape_loop(
+            path,
+            seen,
+            Duration::from_secs(600),
+            shutdown_rx,
+        ));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        shutdown_tx.send(true).expect("shutdown");
+        sup.await
+            .expect("supervisor should finish cleanly, not panic");
+    }
+
+    #[tokio::test]
+    async fn run_with_graceful_exits_when_http_shutdown_immediate() {
+        let args = Args {
+            addr: "unix:///tmp/buildkit-metrics-agent-no-such.sock".into(),
+            metrics_addr: "127.0.0.1:0".into(),
+            scrape_interval_secs: 600,
+        };
+        let r = run_with_graceful(args, std::future::ready(())).await;
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn serve_metrics_from_listener_completes_on_immediate_shutdown() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let rec = PrometheusBuilder::new().build_recorder();
+        let handle = rec.handle();
+        let listener = rt
+            .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
+            .expect("bind");
+        let out: Result<(), anyhow::Error> = ::metrics::with_local_recorder(&rec, || {
+            rt.block_on(async { serve_metrics_from_listener(listener, handle, std::future::ready(())).await })
+        });
+        out.expect("serve");
     }
 }

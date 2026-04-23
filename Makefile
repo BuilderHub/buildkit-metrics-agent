@@ -19,10 +19,10 @@ test: ## Run tests and clippy lints
 	cargo test
 	cargo clippy -- -D warnings
 
-coverage: ## Run tests under cargo-llvm-cov; writes codecov.json; excludes src/generated
+coverage: ## Run tests under cargo-llvm-cov; writes codecov.json; excludes src/generated and main.rs
 	@command -v cargo-llvm-cov >/dev/null 2>&1 || { echo "cargo-llvm-cov not in PATH (use nix develop)"; exit 1; }
 	cargo llvm-cov test -p buildkit-metrics-agent \
-		--ignore-filename-regex '.*/src/generated/.*' \
+		--ignore-filename-regex '.*/src/(generated/.*|main\.rs)' \
 		--codecov --output-path codecov.json \
 		--fail-under-lines 90
 
