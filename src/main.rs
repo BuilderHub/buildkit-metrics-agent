@@ -8,7 +8,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("buildkit_agent=info".parse()?),
+                .add_directive("buildkit_metrics_agent=info".parse()?),
         )
         .init();
 
