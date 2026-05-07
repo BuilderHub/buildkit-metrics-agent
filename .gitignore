@@ -27,3 +27,5 @@ codecov.json
 .vscode/
 .cursor/
 .DS_Store
+
+*result*
