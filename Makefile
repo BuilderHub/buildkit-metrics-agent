@@ -1,10 +1,26 @@
 # BuildKit metrics agent
 
-.PHONY: help generate build run test coverage docker docker-multi
+BUILDKIT_REF ?= v0.31.1
+BUILDKIT_RAW_BASE ?= https://raw.githubusercontent.com/moby/buildkit/$(BUILDKIT_REF)
+GOOGLEAPIS_REF ?= 0a38d04e5f6c265e74a994240b762c22666329a5
+GOOGLEAPIS_RAW_BASE ?= https://raw.githubusercontent.com/googleapis/googleapis/$(GOOGLEAPIS_REF)
+PROTOBUF_REF ?= 69f97e01f74d7c0bc7b429f3aa471a2c22855379
+PROTOBUF_RAW_BASE ?= https://raw.githubusercontent.com/protocolbuffers/protobuf/$(PROTOBUF_REF)/src
+
+.PHONY: help update-protos generate build run test coverage docker docker-multi
 .DEFAULT_GOAL := help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+update-protos: ## Update local proto snapshot from BuildKit; run before generate
+	BUILDKIT_REF="$(BUILDKIT_REF)" \
+	BUILDKIT_RAW_BASE="$(BUILDKIT_RAW_BASE)" \
+	GOOGLEAPIS_REF="$(GOOGLEAPIS_REF)" \
+	GOOGLEAPIS_RAW_BASE="$(GOOGLEAPIS_RAW_BASE)" \
+	PROTOBUF_REF="$(PROTOBUF_REF)" \
+	PROTOBUF_RAW_BASE="$(PROTOBUF_RAW_BASE)" \
+	sh tools/update-protos.sh
 
 generate: ## Generate Rust code from protos into src/generated
 	cargo run -p codegen

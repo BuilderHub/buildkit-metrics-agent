@@ -422,7 +422,10 @@ fn take_new_build_records(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generated::{BuildHistoryRecord, BuildkitVersion, WorkerRecord};
+    use crate::generated::{
+        types::{BuildkitVersion, WorkerRecord},
+        BuildHistoryRecord,
+    };
     use async_trait::async_trait;
     use axum::body::Body;
     use axum::http::Request;
@@ -496,6 +499,7 @@ mod tests {
                     package: String::new(),
                     version: "1.0.0".into(),
                     revision: "rev".into(),
+                    ..Default::default()
                 }),
             },
             workers: ListWorkersResponse {

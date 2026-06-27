@@ -114,7 +114,11 @@ pub fn scrape_and_record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generated::{BuildError, BuildkitVersion, UsageRecord, WorkerRecord};
+    use crate::generated::{
+        google::rpc::Status,
+        types::{BuildkitVersion, WorkerRecord},
+        UsageRecord,
+    };
 
     fn recorder() -> (metrics_exporter_prometheus::PrometheusRecorder, PrometheusHandle) {
         let rec = metrics_exporter_prometheus::PrometheusBuilder::new()
@@ -161,7 +165,7 @@ mod tests {
     fn build_record(
         created: Option<prost_types::Timestamp>,
         completed: Option<prost_types::Timestamp>,
-        error: Option<BuildError>,
+        error: Option<Status>,
         cached_steps: i32,
         total_steps: i32,
     ) -> BuildHistoryRecord {
@@ -174,6 +178,7 @@ mod tests {
             num_cached_steps: cached_steps,
             num_total_steps: total_steps,
             num_completed_steps: total_steps,
+            ..Default::default()
         }
     }
 
@@ -187,6 +192,7 @@ mod tests {
                 package: String::new(),
                 version: "0.14.1".into(),
                 revision: "abc123".into(),
+                ..Default::default()
             }),
         };
         let out = render_with(&rec, &handle, info, empty_workers(), empty_disk(), vec![]);
@@ -272,9 +278,10 @@ mod tests {
         let builds = vec![build_record(
             None,
             None,
-            Some(BuildError {
+            Some(Status {
                 code: 1,
                 message: "build failed".into(),
+                ..Default::default()
             }),
             0,
             5,
@@ -291,9 +298,10 @@ mod tests {
         let builds = vec![build_record(
             None,
             None,
-            Some(BuildError {
+            Some(Status {
                 code: 0,
                 message: String::new(),
+                ..Default::default()
             }),
             0,
             1,
