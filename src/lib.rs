@@ -496,6 +496,7 @@ mod tests {
                     package: String::new(),
                     version: "1.0.0".into(),
                     revision: "rev".into(),
+                    ..Default::default()
                 }),
             },
             workers: ListWorkersResponse {

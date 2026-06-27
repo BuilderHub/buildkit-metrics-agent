@@ -50,10 +50,11 @@ Filters for **namespace**, **pod**, and **top-K** limit are available as dashboa
 - **Nix (recommended):** `nix develop` then use `cargo` / `make` as below.
 - **Otherwise:** Rust 1.70+, `cargo` in PATH.
 
-Regenerate proto-derived code after changing `.proto` files:
+Refresh BuildKit proto snapshots before regenerating proto-derived code:
 
 ```bash
-make generate   # writes src/generated/
+make update-protos   # refreshes proto/ from pinned BuildKit ref
+make generate        # writes src/generated/
 ```
 
 Then build and run:

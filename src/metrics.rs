@@ -187,6 +187,7 @@ mod tests {
                 package: String::new(),
                 version: "0.14.1".into(),
                 revision: "abc123".into(),
+                ..Default::default()
             }),
         };
         let out = render_with(&rec, &handle, info, empty_workers(), empty_disk(), vec![]);
