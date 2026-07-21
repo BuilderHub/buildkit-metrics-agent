@@ -27,7 +27,7 @@ pub fn install_recorder() -> PrometheusHandle {
         .clone()
 }
 
-fn record_info(info: &InfoResponse) {
+pub(crate) fn record_info(info: &InfoResponse) {
     if let Some(v) = info.buildkit_version.as_ref() {
         metrics::gauge!(
             "buildkit_info",
@@ -38,11 +38,11 @@ fn record_info(info: &InfoResponse) {
     }
 }
 
-fn record_workers(workers: &ListWorkersResponse) {
+pub(crate) fn record_workers(workers: &ListWorkersResponse) {
     metrics::gauge!("buildkit_workers_total").set(workers.record.len() as f64);
 }
 
-fn record_disk(disk: &DiskUsageResponse) {
+pub(crate) fn record_disk(disk: &DiskUsageResponse) {
     let total_size: i64 = disk.record.iter().map(|r| r.size).sum::<i64>();
     metrics::gauge!("buildkit_cache_records_total").set(disk.record.len() as f64);
     metrics::gauge!("buildkit_cache_size_bytes").set(total_size as f64);
@@ -80,7 +80,7 @@ fn record_build_duration_if_valid(r: &BuildHistoryRecord) {
     }
 }
 
-fn record_build_counters(builds: &[BuildHistoryRecord]) {
+pub(crate) fn record_build_counters(builds: &[BuildHistoryRecord]) {
     for r in builds {
         let (succeeded, failed) = if r.error.as_ref().is_some_and(|e| e.code != 0) {
             (0u64, 1u64)
@@ -96,6 +96,14 @@ fn record_build_counters(builds: &[BuildHistoryRecord]) {
 
         record_build_duration_if_valid(r);
     }
+}
+
+/// Record a failed Control API fetch, labeled by the source that failed
+/// (info, workers, disk, builds), so partial scrape failures are observable
+/// rather than silently dropped.
+pub(crate) fn record_scrape_failure(source: &str) {
+    metrics::counter!("buildkit_scrape_failures_total", "source" => source.to_string())
+        .increment(1);
 }
 
 /// Update gauges/counters from the latest Control API scrape.
@@ -120,7 +128,10 @@ mod tests {
         UsageRecord,
     };
 
-    fn recorder() -> (metrics_exporter_prometheus::PrometheusRecorder, PrometheusHandle) {
+    fn recorder() -> (
+        metrics_exporter_prometheus::PrometheusRecorder,
+        PrometheusHandle,
+    ) {
         let rec = metrics_exporter_prometheus::PrometheusBuilder::new()
             .set_buckets_for_metric(
                 Matcher::Full("buildkit_build_duration_seconds".to_string()),
@@ -264,7 +275,14 @@ mod tests {
     fn records_successful_build_counters() {
         let (rec, handle) = recorder();
         let builds = vec![build_record(None, None, None, 3, 10)];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
         assert!(out.contains("buildkit_builds_total 1"));
         assert!(out.contains("buildkit_builds_succeeded_total 1"));
         assert!(out.contains("buildkit_builds_failed_total 0"));
@@ -286,7 +304,14 @@ mod tests {
             0,
             5,
         )];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
         assert!(out.contains("buildkit_builds_total 1"));
         assert!(out.contains("buildkit_builds_succeeded_total 0"));
         assert!(out.contains("buildkit_builds_failed_total 1"));
@@ -306,7 +331,14 @@ mod tests {
             0,
             1,
         )];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
         assert!(out.contains("buildkit_builds_succeeded_total 1"));
         assert!(out.contains("buildkit_builds_failed_total 0"));
     }
@@ -323,7 +355,14 @@ mod tests {
             0,
             1,
         )];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
 
         // 45.5s falls in the 60s bucket
         assert!(out.contains("buildkit_build_duration_seconds_bucket{le=\"30\"} 0"));
@@ -336,7 +375,14 @@ mod tests {
     fn no_histogram_without_timestamps() {
         let (rec, handle) = recorder();
         let builds = vec![build_record(None, None, None, 0, 1)];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
         assert!(!out.contains("buildkit_build_duration_seconds"));
     }
 
@@ -344,7 +390,14 @@ mod tests {
     fn no_histogram_with_only_created_at() {
         let (rec, handle) = recorder();
         let builds = vec![build_record(Some(ts(1_700_000_000, 0)), None, None, 0, 1)];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
         assert!(!out.contains("buildkit_build_duration_seconds"));
     }
 
@@ -358,7 +411,14 @@ mod tests {
             0,
             1,
         )];
-        let out = render_with(&rec, &handle, empty_info(), empty_workers(), empty_disk(), builds);
+        let out = render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            builds,
+        );
         assert!(!out.contains("buildkit_build_duration_seconds"));
     }
 

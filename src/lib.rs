@@ -52,10 +52,7 @@ pub struct Args {
 
 /// Normalize `BUILDKIT_ADDR` to a filesystem path (strip optional `unix://` prefix).
 pub fn socket_path_from_addr(addr: &str) -> PathBuf {
-    PathBuf::from(
-        addr.strip_prefix("unix://")
-            .unwrap_or(addr),
-    )
+    PathBuf::from(addr.strip_prefix("unix://").unwrap_or(addr))
 }
 
 pub async fn run() -> Result<()> {
@@ -150,7 +147,10 @@ async fn supervised_scrape_loop(
             Err(e) if e.is_panic() => {
                 match e.try_into_panic() {
                     Ok(payload) => {
-                        tracing::error!(?payload, "scrape_loop task panicked; restarting after backoff");
+                        tracing::error!(
+                            ?payload,
+                            "scrape_loop task panicked; restarting after backoff"
+                        );
                     }
                     Err(_) => {
                         tracing::error!("scrape_loop task panicked; restarting after backoff");
@@ -180,13 +180,10 @@ async fn supervised_scrape_loop(
 }
 
 pub(crate) async fn run_with(args: Args) -> Result<()> {
-    run_with_graceful(
-        args,
-        async {
-            let _ = tokio::signal::ctrl_c().await;
-            tracing::info!("shutting down");
-        },
-    )
+    run_with_graceful(args, async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutting down");
+    })
     .await
 }
 
@@ -293,24 +290,27 @@ pub async fn scrape_loop(
     seen_refs: Arc<Mutex<HashSet<String>>>,
     scrape_interval: Duration,
 ) {
-    scrape_loop_impl(
-        socket_path,
-        seen_refs,
-        scrape_interval,
-        |p, s| {
-            let path = p.to_path_buf();
-            let seen = Arc::clone(s);
-            Box::pin(async move { scrape_once(path.as_path(), &seen).await })
-        },
-    )
+    scrape_loop_impl(socket_path, seen_refs, scrape_interval, |p, s| {
+        let path = p.to_path_buf();
+        let seen = Arc::clone(s);
+        Box::pin(async move { scrape_once(path.as_path(), &seen).await })
+    })
     .await
 }
 
-pub async fn scrape_once(socket_path: &Path, seen_refs: &Arc<Mutex<HashSet<String>>>) -> Result<()> {
+// DiskUsage responses on large caches can exceed tonic's 4 MiB default
+// decoding limit; raise it so the scrape does not fail on big caches.
+const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
+
+pub async fn scrape_once(
+    socket_path: &Path,
+    seen_refs: &Arc<Mutex<HashSet<String>>>,
+) -> Result<()> {
     let channel = connect_control_channel(socket_path)
         .await
         .context("connect buildkit gRPC channel")?;
-    let mut client = ControlClient::new(channel);
+    let mut client =
+        ControlClient::new(channel).max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
     scrape_once_with(&mut client, seen_refs).await
 }
 
@@ -396,14 +396,33 @@ pub(crate) async fn scrape_once_with(
     client: &mut impl ControlApi,
     seen_refs: &Arc<Mutex<HashSet<String>>>,
 ) -> Result<()> {
-    let info = client.fetch_info().await?;
-    let workers = client.fetch_workers().await?;
-    let disk = client.fetch_disk().await?;
-    let completed = client.fetch_completed_builds().await?;
-
-    let new_records = take_new_build_records(seen_refs, completed);
-    metrics::scrape_and_record(info, workers, disk, new_records);
+    // Each source is recorded independently: one failed Control API call
+    // degrades to a scrape-failure metric rather than dropping the whole cycle.
+    match client.fetch_info().await {
+        Ok(info) => metrics::record_info(&info),
+        Err(e) => note_scrape_failure("info", &e),
+    }
+    match client.fetch_workers().await {
+        Ok(workers) => metrics::record_workers(&workers),
+        Err(e) => note_scrape_failure("workers", &e),
+    }
+    match client.fetch_disk().await {
+        Ok(disk) => metrics::record_disk(&disk),
+        Err(e) => note_scrape_failure("disk", &e),
+    }
+    match client.fetch_completed_builds().await {
+        Ok(completed) => {
+            metrics::record_build_counters(&take_new_build_records(seen_refs, completed));
+        }
+        Err(e) => note_scrape_failure("builds", &e),
+    }
     Ok(())
+}
+
+fn note_scrape_failure(source: &str, err: &anyhow::Error) {
+    let chain = format!("{err:#}");
+    tracing::warn!(source, error = %chain, "buildkit control scrape failed");
+    metrics::record_scrape_failure(source);
 }
 
 fn take_new_build_records(
@@ -458,28 +477,40 @@ mod tests {
         workers: ListWorkersResponse,
         disk: DiskUsageResponse,
         builds: Vec<BuildHistoryRecord>,
+        fail_info_with: Option<String>,
+        fail_workers_with: Option<String>,
+        fail_disk_with: Option<String>,
         fail_builds_with: Option<String>,
     }
 
     #[async_trait]
     impl ControlApi for FakeControl {
         async fn fetch_info(&mut self) -> Result<InfoResponse> {
-            Ok(self.info.clone())
+            match &self.fail_info_with {
+                Some(msg) => Err(anyhow::anyhow!("{msg}")),
+                None => Ok(self.info.clone()),
+            }
         }
 
         async fn fetch_workers(&mut self) -> Result<ListWorkersResponse> {
-            Ok(self.workers.clone())
+            match &self.fail_workers_with {
+                Some(msg) => Err(anyhow::anyhow!("{msg}")),
+                None => Ok(self.workers.clone()),
+            }
         }
 
         async fn fetch_disk(&mut self) -> Result<DiskUsageResponse> {
-            Ok(self.disk.clone())
+            match &self.fail_disk_with {
+                Some(msg) => Err(anyhow::anyhow!("{msg}")),
+                None => Ok(self.disk.clone()),
+            }
         }
 
         async fn fetch_completed_builds(&mut self) -> Result<Vec<BuildHistoryRecord>> {
-            if let Some(msg) = &self.fail_builds_with {
-                return Err(anyhow::anyhow!("{msg}"));
+            match &self.fail_builds_with {
+                Some(msg) => Err(anyhow::anyhow!("{msg}")),
+                None => Ok(self.builds.clone()),
             }
-            Ok(self.builds.clone())
         }
     }
 
@@ -524,15 +555,64 @@ mod tests {
         assert!(body.contains("buildkit_workers_total 1"));
     }
 
-    #[tokio::test]
-    async fn scrape_once_with_propagates_build_stream_error() {
+    #[test]
+    fn scrape_once_with_records_partial_on_source_error() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let rec = PrometheusBuilder::new().build_recorder();
+        let handle = rec.handle();
+
         let mut fake = FakeControl {
+            workers: ListWorkersResponse {
+                record: vec![WorkerRecord::default()],
+            },
             fail_builds_with: Some("stream failed".into()),
             ..Default::default()
         };
         let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-        let err = scrape_once_with(&mut fake, &seen).await.unwrap_err();
-        assert!(err.to_string().contains("stream failed"));
+        ::metrics::with_local_recorder(&rec, || {
+            rt.block_on(scrape_once_with(&mut fake, &seen))
+                .expect("scrape stays ok despite one failed source");
+        });
+
+        let body = handle.render();
+        assert!(body.contains("buildkit_workers_total 1"));
+        assert!(body.contains(r#"buildkit_scrape_failures_total{source="builds"} 1"#));
+    }
+
+    #[test]
+    fn scrape_once_with_records_failures_for_all_sources() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let rec = PrometheusBuilder::new().build_recorder();
+        let handle = rec.handle();
+
+        let mut fake = FakeControl {
+            fail_info_with: Some("x".into()),
+            fail_workers_with: Some("x".into()),
+            fail_disk_with: Some("x".into()),
+            fail_builds_with: Some("x".into()),
+            ..Default::default()
+        };
+        let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        ::metrics::with_local_recorder(&rec, || {
+            rt.block_on(scrape_once_with(&mut fake, &seen))
+                .expect("scrape stays ok when all sources fail");
+        });
+
+        let body = handle.render();
+        for source in ["info", "workers", "disk", "builds"] {
+            assert!(
+                body.contains(&format!(
+                    r#"buildkit_scrape_failures_total{{source="{source}"}} 1"#
+                )),
+                "missing failure metric for {source}"
+            );
+        }
     }
 
     #[test]
@@ -636,15 +716,10 @@ mod tests {
         let path = PathBuf::from("/tmp/buildkit-metrics-agent-test.sock");
         let seen = Arc::new(Mutex::new(HashSet::new()));
         let task = tokio::spawn(async move {
-            scrape_loop_impl(
-                path,
-                seen,
-                Duration::from_secs(3600),
-                move |_p, _s| {
-                    calls2.fetch_add(1, Ordering::SeqCst);
-                    Box::pin(async { Ok(()) })
-                },
-            )
+            scrape_loop_impl(path, seen, Duration::from_secs(3600), move |_p, _s| {
+                calls2.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            })
             .await
         });
         // Warmup sleep inside scrape_loop_impl is 1s real time.
@@ -691,13 +766,9 @@ mod tests {
         ));
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let mut stream = tokio::net::TcpStream::connect(addr)
-            .await
-            .expect("connect");
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
         stream
-            .write_all(
-                b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-            )
+            .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
             .await
             .expect("write");
         let mut buf = vec![0u8; 4096];
@@ -710,11 +781,7 @@ mod tests {
     #[tokio::test]
     async fn supervisor_backoff_or_stop_completes_sleep_without_shutdown() {
         let (_tx, mut rx) = watch::channel(false);
-        let out = super::supervisor_backoff_or_stop(
-            &mut rx,
-            Duration::from_millis(40),
-        )
-        .await;
+        let out = super::supervisor_backoff_or_stop(&mut rx, Duration::from_millis(40)).await;
         assert!(!out, "expected sleep to complete without stop");
     }
 
@@ -726,11 +793,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(20)).await;
             t.send(true).expect("send");
         });
-        let out = super::supervisor_backoff_or_stop(
-            &mut rx,
-            Duration::from_secs(2),
-        )
-        .await;
+        let out = super::supervisor_backoff_or_stop(&mut rx, Duration::from_secs(2)).await;
         let _ = wake.await;
         assert!(out, "expected shutdown to win over long sleep");
     }
@@ -739,11 +802,7 @@ mod tests {
     async fn supervisor_backoff_or_stop_stops_when_watch_sender_dropped() {
         let (tx, mut rx) = watch::channel(false);
         drop(tx);
-        let out = super::supervisor_backoff_or_stop(
-            &mut rx,
-            Duration::from_secs(10),
-        )
-        .await;
+        let out = super::supervisor_backoff_or_stop(&mut rx, Duration::from_secs(10)).await;
         assert!(out, "expected RecvError path when all senders dropped");
     }
 
@@ -787,7 +846,9 @@ mod tests {
             .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
             .expect("bind");
         let out: Result<(), anyhow::Error> = ::metrics::with_local_recorder(&rec, || {
-            rt.block_on(async { serve_metrics_from_listener(listener, handle, std::future::ready(())).await })
+            rt.block_on(async {
+                serve_metrics_from_listener(listener, handle, std::future::ready(())).await
+            })
         });
         out.expect("serve");
     }
