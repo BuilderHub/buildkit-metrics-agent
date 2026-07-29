@@ -168,6 +168,7 @@ jobs:
   all-green:
     if: ${{ always() }}
     needs:
+      - lint
       - build-and-test
       - e2e-kind
       - upload-coverage
