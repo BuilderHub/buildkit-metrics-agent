@@ -279,7 +279,8 @@ async fn scrape_loop_impl<F>(
     tokio::time::sleep(Duration::from_secs(1)).await;
     loop {
         if let Err(e) = scrape(socket_path.as_path(), &seen_refs).await {
-            tracing::warn!(err = %e, "scrape failed");
+            let chain = format_error_chain(&e);
+            tracing::warn!(err = %chain, "scrape failed");
         }
         tokio::time::sleep(scrape_interval).await;
     }
@@ -420,9 +421,16 @@ pub(crate) async fn scrape_once_with(
 }
 
 fn note_scrape_failure(source: &str, err: &anyhow::Error) {
-    let chain = format!("{err:#}");
+    let chain = format_error_chain(err);
     tracing::warn!(source, error = %chain, "buildkit control scrape failed");
     metrics::record_scrape_failure(source);
+}
+
+fn format_error_chain(err: &anyhow::Error) -> String {
+    err.chain()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 fn take_new_build_records(
@@ -468,6 +476,20 @@ mod tests {
         assert_eq!(
             socket_path_from_addr("/tmp/buildkit.sock"),
             PathBuf::from("/tmp/buildkit.sock")
+        );
+    }
+
+    #[test]
+    fn format_error_chain_includes_control_context_and_tonic_source() {
+        let err = anyhow::anyhow!("tonic status: ResourceExhausted: message length too large")
+            .context("transport status")
+            .context("buildkit Control/DiskUsage");
+
+        let chain = format_error_chain(&err);
+
+        assert_eq!(
+            chain,
+            "buildkit Control/DiskUsage: transport status: tonic status: ResourceExhausted: message length too large"
         );
     }
 
@@ -841,8 +863,7 @@ mod tests {
             .build()
             .expect("runtime");
         let rec = PrometheusBuilder::new().build_recorder();
-        let handle = 
-            rec.handle();
+        let handle = rec.handle();
         let listener = rt
             .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
             .expect("bind");
