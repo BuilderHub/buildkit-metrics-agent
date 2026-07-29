@@ -841,7 +841,8 @@ mod tests {
             .build()
             .expect("runtime");
         let rec = PrometheusBuilder::new().build_recorder();
-        let handle = rec.handle();
+        let handle = 
+            rec.handle();
         let listener = rt
             .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
             .expect("bind");
