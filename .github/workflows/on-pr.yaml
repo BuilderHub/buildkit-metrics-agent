@@ -12,6 +12,20 @@ defaults:
     shell: bash
 
 jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Check fmt
+        run: cargo fmt --check
+
   build-and-test:
     runs-on: ${{ matrix.platform }}
     permissions:
