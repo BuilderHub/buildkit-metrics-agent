@@ -1,6 +1,6 @@
 # BuildKit metrics agent
 
-BUILDKIT_REF ?= v0.31.1
+BUILDKIT_REF ?= v0.31.2
 BUILDKIT_RAW_BASE ?= https://raw.githubusercontent.com/moby/buildkit/$(BUILDKIT_REF)
 GOOGLEAPIS_REF ?= 0a38d04e5f6c265e74a994240b762c22666329a5
 GOOGLEAPIS_RAW_BASE ?= https://raw.githubusercontent.com/googleapis/googleapis/$(GOOGLEAPIS_REF)
