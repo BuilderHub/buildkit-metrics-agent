@@ -8,12 +8,14 @@ use std::time::SystemTime;
 
 static RECORDER: OnceLock<PrometheusHandle> = OnceLock::new();
 
+const CONTROL_API_SOURCES: &[&str] = &["info", "workers", "disk", "builds"];
+
 const BUILD_DURATION_BUCKETS: &[f64] = &[
     1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0,
 ];
 
 pub fn install_recorder() -> PrometheusHandle {
-    RECORDER
+    let handle = RECORDER
         .get_or_init(|| {
             metrics_exporter_prometheus::PrometheusBuilder::new()
                 .set_buckets_for_metric(
@@ -24,7 +26,16 @@ pub fn install_recorder() -> PrometheusHandle {
                 .install_recorder()
                 .expect("metrics recorder")
         })
-        .clone()
+        .clone();
+    init_scrape_failure_metrics();
+    handle
+}
+
+pub(crate) fn init_scrape_failure_metrics() {
+    for source in CONTROL_API_SOURCES {
+        metrics::counter!("buildkit_scrape_failures_total", "source" => source.to_string())
+            .absolute(0);
+    }
 }
 
 pub(crate) fn record_info(info: &InfoResponse) {
@@ -267,6 +278,36 @@ mod tests {
         };
         let out = render_with(&rec, &handle, empty_info(), empty_workers(), disk, vec![]);
         assert!(out.contains(r#"buildkit_cache_size_by_type_bytes{record_type="unknown"} 42"#));
+    }
+
+    #[test]
+    fn initializes_scrape_failure_metrics_to_zero() {
+        let (rec, handle) = recorder();
+
+        metrics::with_local_recorder(&rec, init_scrape_failure_metrics);
+        let out = handle.render();
+
+        for source in CONTROL_API_SOURCES {
+            assert!(
+                out.contains(&format!(
+                    r#"buildkit_scrape_failures_total{{source="{source}"}} 0"#
+                )),
+                "missing zero-valued failure metric for {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn initialized_scrape_failure_metric_can_increment() {
+        let (rec, handle) = recorder();
+
+        metrics::with_local_recorder(&rec, || {
+            init_scrape_failure_metrics();
+            record_scrape_failure("disk");
+        });
+        let out = handle.render();
+
+        assert!(out.contains(r#"buildkit_scrape_failures_total{source="disk"} 1"#));
     }
 
     // -- Build counters --
