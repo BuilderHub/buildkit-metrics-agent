@@ -176,9 +176,15 @@ jobs:
     steps:
       - name: Verify all required jobs passed
         run: |
+          echo "lint result: ${{ needs.lint.result }}"
           echo "build-and-test result: ${{ needs.build-and-test.result }}"
           echo "e2e-kind result: ${{ needs.e2e-kind.result }}"
           echo "upload-coverage result: ${{ needs.upload-coverage.result }}"
+
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "::error::lint did not succeed"
+            exit 1
+          fi
 
           if [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
             echo "::error::build-and-test did not succeed"
