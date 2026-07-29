@@ -29,6 +29,7 @@ flowchart LR
 | `buildkit_builds_cached_steps_total` | counter   |                       | Total cache-hit build steps              |
 | `buildkit_builds_total_steps_total`  | counter   |                       | Total build steps                        |
 | `buildkit_build_duration_seconds`    | histogram |                       | Build duration from created to completed |
+| `buildkit_scrape_failures_total`     | counter   | `source`              | Failed Control API fetches by source     |
 
 ## Grafana
 

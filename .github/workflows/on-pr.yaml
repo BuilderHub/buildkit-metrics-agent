@@ -12,6 +12,20 @@ defaults:
     shell: bash
 
 jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Check fmt
+        run: cargo fmt --check
+
   build-and-test:
     runs-on: ${{ matrix.platform }}
     permissions:
@@ -154,6 +168,7 @@ jobs:
   all-green:
     if: ${{ always() }}
     needs:
+      - lint
       - build-and-test
       - e2e-kind
       - upload-coverage
@@ -161,9 +176,15 @@ jobs:
     steps:
       - name: Verify all required jobs passed
         run: |
+          echo "lint result: ${{ needs.lint.result }}"
           echo "build-and-test result: ${{ needs.build-and-test.result }}"
           echo "e2e-kind result: ${{ needs.e2e-kind.result }}"
           echo "upload-coverage result: ${{ needs.upload-coverage.result }}"
+
+          if [[ "${{ needs.lint.result }}" != "success" ]]; then
+            echo "::error::lint did not succeed"
+            exit 1
+          fi
 
           if [[ "${{ needs.build-and-test.result }}" != "success" ]]; then
             echo "::error::build-and-test did not succeed"
