@@ -91,6 +91,42 @@ fn record_build_duration_if_valid(r: &BuildHistoryRecord) {
     }
 }
 
+/// Dockerfile target of a build, or `unknown` when the record reports none:
+/// the build had no `--target`, or its frontend has no notion of one.
+fn build_target(r: &BuildHistoryRecord) -> String {
+    match r.frontend_attrs.get("target") {
+        Some(t) if !t.is_empty() => t.clone(),
+        _ => "unknown".to_string(),
+    }
+}
+
+/// Repository of the image a build exported, or `unknown` when it exported
+/// none. A build that exports several names is attributed to the first.
+fn build_image(r: &BuildHistoryRecord) -> String {
+    r.exporter_response
+        .get("image.name")
+        .or_else(|| r.exporters.iter().find_map(|e| e.attrs.get("name")))
+        .and_then(|names| names.split(',').next())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map_or_else(
+            || "unknown".to_string(),
+            |name| repository(name).to_string(),
+        )
+}
+
+/// Strip tag and digest from an image reference. Both are routinely per-build
+/// (a commit SHA), and a label that changes on every build is unbounded. A
+/// colon only opens a tag when it follows the last `/`, so a registry port
+/// such as `localhost:5000/img` survives.
+fn repository(image: &str) -> &str {
+    let name = image.split('@').next().unwrap_or(image);
+    match name.rfind(':') {
+        Some(i) if !name[i..].contains('/') => &name[..i],
+        _ => name,
+    }
+}
+
 pub(crate) fn record_build_counters(builds: &[BuildHistoryRecord]) {
     for r in builds {
         let (succeeded, failed) = if r.error.as_ref().is_some_and(|e| e.code != 0) {
@@ -98,12 +134,23 @@ pub(crate) fn record_build_counters(builds: &[BuildHistoryRecord]) {
         } else {
             (1u64, 0u64)
         };
+        let target = build_target(r);
+        let image = build_image(r);
         metrics::counter!("buildkit_builds_total").increment(1);
         metrics::counter!("buildkit_builds_succeeded_total").increment(succeeded);
         metrics::counter!("buildkit_builds_failed_total").increment(failed);
-        metrics::counter!("buildkit_builds_cached_steps_total")
-            .increment(r.num_cached_steps as u64);
-        metrics::counter!("buildkit_builds_total_steps_total").increment(r.num_total_steps as u64);
+        metrics::counter!(
+            "buildkit_builds_cached_steps_total",
+            "target" => target.clone(),
+            "image" => image.clone()
+        )
+        .increment(r.num_cached_steps as u64);
+        metrics::counter!(
+            "buildkit_builds_total_steps_total",
+            "target" => target,
+            "image" => image
+        )
+        .increment(r.num_total_steps as u64);
 
         record_build_duration_if_valid(r);
     }
@@ -136,7 +183,7 @@ mod tests {
     use crate::generated::{
         google::rpc::Status,
         types::{BuildkitVersion, WorkerRecord},
-        UsageRecord,
+        Exporter, UsageRecord,
     };
 
     fn recorder() -> (
@@ -327,8 +374,11 @@ mod tests {
         assert!(out.contains("buildkit_builds_total 1"));
         assert!(out.contains("buildkit_builds_succeeded_total 1"));
         assert!(out.contains("buildkit_builds_failed_total 0"));
-        assert!(out.contains("buildkit_builds_cached_steps_total 3"));
-        assert!(out.contains("buildkit_builds_total_steps_total 10"));
+        // No target and no exporter on the record, so both labels fall back.
+        assert!(out
+            .contains(r#"buildkit_builds_cached_steps_total{target="unknown",image="unknown"} 3"#));
+        assert!(out
+            .contains(r#"buildkit_builds_total_steps_total{target="unknown",image="unknown"} 10"#));
     }
 
     #[test]
@@ -461,6 +511,109 @@ mod tests {
             builds,
         );
         assert!(!out.contains("buildkit_build_duration_seconds"));
+    }
+
+    // -- Build counter labels --
+
+    fn labelled_build_record(
+        frontend_attrs: &[(&str, &str)],
+        exporters: Vec<Exporter>,
+        exporter_response: &[(&str, &str)],
+    ) -> BuildHistoryRecord {
+        BuildHistoryRecord {
+            frontend_attrs: frontend_attrs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            exporters,
+            exporter_response: exporter_response
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            num_cached_steps: 4,
+            num_total_steps: 6,
+            ..build_record(None, None, None, 4, 6)
+        }
+    }
+
+    fn render_one(build: BuildHistoryRecord) -> String {
+        let (rec, handle) = recorder();
+        render_with(
+            &rec,
+            &handle,
+            empty_info(),
+            empty_workers(),
+            empty_disk(),
+            vec![build],
+        )
+    }
+
+    #[test]
+    fn labels_step_counters_with_target_and_image() {
+        let out = render_one(labelled_build_record(
+            &[("target", "runtime"), ("filename", "Dockerfile")],
+            vec![],
+            &[("image.name", "ghcr.io/acme/app:sha-1a2b3c")],
+        ));
+        assert!(out.contains(
+            r#"buildkit_builds_cached_steps_total{target="runtime",image="ghcr.io/acme/app"} 4"#
+        ));
+        assert!(out.contains(
+            r#"buildkit_builds_total_steps_total{target="runtime",image="ghcr.io/acme/app"} 6"#
+        ));
+    }
+
+    #[test]
+    fn falls_back_to_exporter_attrs_for_image() {
+        let out = render_one(labelled_build_record(
+            &[],
+            vec![Exporter {
+                r#type: "image".into(),
+                attrs: [("name".to_string(), "ghcr.io/acme/app:latest".to_string())]
+                    .into_iter()
+                    .collect(),
+            }],
+            &[],
+        ));
+        assert!(out.contains(
+            r#"buildkit_builds_cached_steps_total{target="unknown",image="ghcr.io/acme/app"} 4"#
+        ));
+    }
+
+    #[test]
+    fn attributes_a_multi_name_export_to_its_first_name() {
+        let out = render_one(labelled_build_record(
+            &[],
+            vec![],
+            &[("image.name", "ghcr.io/acme/app:latest,ghcr.io/acme/app:v1")],
+        ));
+        assert!(out.contains(r#"image="ghcr.io/acme/app"}"#));
+    }
+
+    #[test]
+    fn strips_digest_but_keeps_registry_port() {
+        let out = render_one(labelled_build_record(
+            &[],
+            vec![],
+            &[(
+                "image.name",
+                "localhost:5000/acme/app@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            )],
+        ));
+        assert!(out.contains(r#"image="localhost:5000/acme/app"}"#));
+    }
+
+    #[test]
+    fn empty_label_values_fall_back_to_unknown() {
+        let out = render_one(labelled_build_record(
+            &[("target", "")],
+            vec![],
+            &[("image.name", "")],
+        ));
+        assert!(out
+            .contains(r#"buildkit_builds_cached_steps_total{target="unknown",image="unknown"} 4"#));
+        assert!(!out.contains(r#"target="""#));
+        assert!(!out.contains(r#"image="""#));
     }
 
     #[test]
