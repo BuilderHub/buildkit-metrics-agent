@@ -16,20 +16,20 @@ flowchart LR
 
 ## Metrics
 
-| Metric                               | Type      | Labels                | Description                              |
-| ------------------------------------ | --------- | --------------------- | ---------------------------------------- |
-| `buildkit_info`                      | gauge     | `version`, `revision` | BuildKit version info (always `1`)       |
-| `buildkit_workers_total`             | gauge     |                       | Number of active workers                 |
-| `buildkit_cache_records_total`       | gauge     |                       | Number of cache records                  |
-| `buildkit_cache_size_bytes`          | gauge     |                       | Total cache size in bytes                |
-| `buildkit_cache_size_by_type_bytes`  | gauge     | `record_type`         | Cache size in bytes by record type       |
-| `buildkit_builds_total`              | counter   |                       | Total builds observed                    |
-| `buildkit_builds_succeeded_total`    | counter   |                       | Builds that completed successfully       |
-| `buildkit_builds_failed_total`       | counter   |                       | Builds that failed                       |
-| `buildkit_builds_cached_steps_total` | counter   | optional              | Total cache-hit build steps              |
-| `buildkit_builds_total_steps_total`  | counter   | optional              | Total build steps                        |
-| `buildkit_build_duration_seconds`    | histogram |                       | Build duration from created to completed |
-| `buildkit_scrape_failures_total`     | counter   | `source`              | Failed Control API fetches by source     |
+| Metric                               | Type      | Labels                       | Description                              |
+| ------------------------------------ | --------- | ---------------------------- | ---------------------------------------- |
+| `buildkit_info`                      | gauge     | `version`, `revision`        | BuildKit version info (always `1`)       |
+| `buildkit_workers_total`             | gauge     |                              | Number of active workers                 |
+| `buildkit_cache_records_total`       | gauge     |                              | Number of cache records                  |
+| `buildkit_cache_size_bytes`          | gauge     |                              | Total cache size in bytes                |
+| `buildkit_cache_size_by_type_bytes`  | gauge     | `record_type`                | Cache size in bytes by record type       |
+| `buildkit_builds_total`              | counter   |                              | Total builds observed                    |
+| `buildkit_builds_succeeded_total`    | counter   |                              | Builds that completed successfully       |
+| `buildkit_builds_failed_total`       | counter   |                              | Builds that failed                       |
+| `buildkit_builds_cached_steps_total` | counter   | `target`, `image` (opt-in)   | Total cache-hit build steps              |
+| `buildkit_builds_total_steps_total`  | counter   | `target`, `image` (opt-in)   | Total build steps                        |
+| `buildkit_build_duration_seconds`    | histogram |                              | Build duration from created to completed |
+| `buildkit_scrape_failures_total`     | counter   | `source`                     | Failed Control API fetches by source     |
 
 The step counters are unlabeled by default. Opt in with
 `--labels.build-steps` (env `LABELS_BUILD_STEPS`): a comma-separated list of
@@ -63,6 +63,17 @@ The dashboard includes:
 
 Filters for **namespace**, **pod**, and **top-K** limit are available as dashboard variables.
 
+## Config
+
+Flags or the matching environment variable.
+
+| Flag | Env | Default | Description |
+| ---- | --- | ------- | ----------- |
+| `--addr` | `BUILDKIT_ADDR` | `unix:///run/buildkit/buildkitd.sock` | BuildKit gRPC endpoint (unix socket path or `unix:///path`) |
+| `--metrics-addr` | `METRICS_ADDR` | `0.0.0.0:9090` | Prometheus `/metrics` listen address |
+| `--scrape-interval-secs` | `SCRAPE_INTERVAL_SECS` | `15` | How often to scrape the Control API |
+| `--labels.build-steps` | `LABELS_BUILD_STEPS` | empty | Extra labels on both step counters. Comma-separated `target` and/or `image`. |
+
 ## Dev Setup
 
 - **Nix (recommended):** `nix develop` then use `cargo` / `make` as below.
@@ -81,8 +92,6 @@ Then build and run:
 cargo build --release
 cargo run --release --   # or: make run
 ```
-
-Config (env or flags): `BUILDKIT_ADDR` (default `unix:///run/buildkit/buildkitd.sock`), `METRICS_ADDR` (default `0.0.0.0:9090`), `SCRAPE_INTERVAL_SECS` (default `15`), `LABELS_BUILD_STEPS` / `--labels.build-steps` (default empty; allowed: `target`, `image`).
 
 ### Image Build
 

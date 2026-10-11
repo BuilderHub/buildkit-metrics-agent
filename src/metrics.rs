@@ -131,6 +131,7 @@ fn repository(image: &str) -> &str {
 fn build_step_labels(r: &BuildHistoryRecord, config: &LabelsConfig) -> Vec<metrics::Label> {
     config
         .build_steps
+        .as_slice()
         .iter()
         .map(|label| match label {
             BuildStepLabel::Target => metrics::Label::new("target", build_target(r)),
@@ -213,10 +214,15 @@ mod tests {
         disk: DiskUsageResponse,
         builds: Vec<BuildHistoryRecord>,
     ) -> String {
-        metrics::with_local_recorder(rec, || {
-            scrape_and_record(info, workers, disk, builds, &LabelsConfig::default())
-        });
-        handle.render()
+        render_with_labels(
+            rec,
+            handle,
+            info,
+            workers,
+            disk,
+            builds,
+            &LabelsConfig::default(),
+        )
     }
 
     fn render_with_labels(

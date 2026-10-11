@@ -18,7 +18,6 @@ use hyper_util::rt::TokioIo;
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::collections::HashSet;
 use std::future::Future;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::str::FromStr;
@@ -82,23 +81,19 @@ pub enum BuildStepLabel {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BuildStepLabels(Vec<BuildStepLabel>);
 
-impl Deref for BuildStepLabels {
-    type Target = [BuildStepLabel];
-
-    fn deref(&self) -> &Self::Target {
+impl BuildStepLabels {
+    pub fn as_slice(&self) -> &[BuildStepLabel] {
         &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
 impl From<Vec<BuildStepLabel>> for BuildStepLabels {
     fn from(labels: Vec<BuildStepLabel>) -> Self {
-        let mut out = Vec::new();
-        for label in labels {
-            if !out.contains(&label) {
-                out.push(label);
-            }
-        }
-        Self(out)
+        Self(dedupe_build_step_labels(labels))
     }
 }
 
@@ -108,6 +103,18 @@ impl FromStr for BuildStepLabels {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_build_step_labels(s).map(Self)
     }
+}
+
+fn dedupe_build_step_labels(
+    labels: impl IntoIterator<Item = BuildStepLabel>,
+) -> Vec<BuildStepLabel> {
+    let mut out = Vec::new();
+    for label in labels {
+        if !out.contains(&label) {
+            out.push(label);
+        }
+    }
+    out
 }
 
 /// Parses `--labels.build-steps` / `LABELS_BUILD_STEPS`. Unknown names fail;
@@ -121,11 +128,9 @@ pub(crate) fn parse_build_step_labels(s: &str) -> Result<Vec<BuildStepLabel>, St
         }
         let label = BuildStepLabel::from_str(raw, false)
             .map_err(|_| format!("unknown build-steps label '{raw}', expected target or image"))?;
-        if !labels.contains(&label) {
-            labels.push(label);
-        }
+        labels.push(label);
     }
-    Ok(labels)
+    Ok(dedupe_build_step_labels(labels))
 }
 
 /// Normalize `BUILDKIT_ADDR` to a filesystem path (strip optional `unix://` prefix).
@@ -596,7 +601,7 @@ mod tests {
         ])
         .expect("parse");
         assert_eq!(
-            &args.labels.build_steps[..],
+            args.labels.build_steps.as_slice(),
             [BuildStepLabel::Target, BuildStepLabel::Image]
         );
     }
