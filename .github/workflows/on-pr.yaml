@@ -103,97 +103,13 @@ jobs:
         run: kubectl wait --for=condition=ready pod/buildkitd --timeout=180s
 
       - name: Port-forward services
-        run: |
-          kubectl port-forward service/buildkitd 1234:1234 >/tmp/pf-buildkitd.log 2>&1 &
-          kubectl port-forward service/buildkit-metrics-agent 9090:9090 >/tmp/pf-metrics.log 2>&1 &
-
-          for _ in $(seq 1 30); do
-            if curl -sSf "http://127.0.0.1:9090/metrics" >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "Port-forward did not become ready"
-          exit 1
+        run: ci/on-pr/e2e-kind/port-forward.sh
 
       - name: Run build via buildx on remote BuildKit
-        run: |
-          docker buildx create --name e2e-remote --driver remote tcp://127.0.0.1:1234 --use
-          # Small named-target image so step-counter labels have known values.
-          mkdir -p /tmp/e2e-ctx
-          printf '%s\n' 'FROM busybox AS runtime' 'RUN echo e2e' > /tmp/e2e-ctx/Dockerfile
-          docker buildx build --builder e2e-remote --progress plain \
-            --target runtime \
-            -t e2e.example/app:ci \
-            --output type=oci,dest=/tmp/e2e-app.tar \
-            /tmp/e2e-ctx
+        run: ci/on-pr/e2e-kind/run-build.sh
 
       - name: Assert metrics expose build counters
-        run: |
-          python - <<'PY'
-          import re
-          import time
-          import urllib.request
-
-          url = "http://127.0.0.1:9090/metrics"
-          wanted = (
-              "buildkit_builds_total",
-              "buildkit_builds_succeeded_total",
-              "buildkit_builds_failed_total",
-          )
-          step_labels = (("target", "runtime"), ("image", "e2e.example/app"))
-          deadline = time.time() + 120
-          latest_body = ""
-
-          def unlabeled(body, name):
-              m = re.search(rf"^{re.escape(name)}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", body, re.M)
-              return float(m.group(1)) if m else None
-
-          def labeled(body, name, labels):
-              parts = "".join(
-                  rf'(?=[^}}]*{re.escape(key)}="{re.escape(value)}")' for key, value in labels
-              )
-              m = re.search(
-                  rf"^{re.escape(name)}\{{{parts}[^}}]*\}}\s+([0-9.]+)$",
-                  body,
-                  re.M,
-              )
-              return float(m.group(1)) if m else None
-
-          try:
-              while time.time() < deadline:
-                  latest_body = urllib.request.urlopen(url, timeout=5).read().decode()
-                  values = {metric: unlabeled(latest_body, metric) for metric in wanted}
-                  cached = labeled(
-                      latest_body, "buildkit_builds_cached_steps_total", step_labels
-                  )
-                  total_steps = labeled(
-                      latest_body, "buildkit_builds_total_steps_total", step_labels
-                  )
-                  values["buildkit_builds_cached_steps_total"] = cached
-                  values["buildkit_builds_total_steps_total"] = total_steps
-
-                  if (
-                      all(values[metric] is not None for metric in wanted)
-                      and values["buildkit_builds_total"] >= 1
-                      and values["buildkit_builds_succeeded_total"] >= 1
-                      and values["buildkit_builds_failed_total"] == 0
-                      and cached is not None
-                      and total_steps is not None
-                      and total_steps >= 1
-                  ):
-                      print("Metrics check passed:", values)
-                      break
-
-                  time.sleep(5)
-              else:
-                  raise SystemExit("Expected build metrics were not observed within timeout")
-          finally:
-              print("----- /metrics payload start -----")
-              print(latest_body.rstrip())
-              print("----- /metrics payload end -----")
-          PY
+        run: python ci/on-pr/e2e-kind/assert-metrics.py
 
   all-green:
     if: ${{ always() }}
