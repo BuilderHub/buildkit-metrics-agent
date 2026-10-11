@@ -26,22 +26,27 @@ flowchart LR
 | `buildkit_builds_total`              | counter   |                       | Total builds observed                    |
 | `buildkit_builds_succeeded_total`    | counter   |                       | Builds that completed successfully       |
 | `buildkit_builds_failed_total`       | counter   |                       | Builds that failed                       |
-| `buildkit_builds_cached_steps_total` | counter   | `target`, `image`     | Total cache-hit build steps              |
-| `buildkit_builds_total_steps_total`  | counter   | `target`, `image`     | Total build steps                        |
+| `buildkit_builds_cached_steps_total` | counter   | optional              | Total cache-hit build steps              |
+| `buildkit_builds_total_steps_total`  | counter   | optional              | Total build steps                        |
 | `buildkit_build_duration_seconds`    | histogram |                       | Build duration from created to completed |
 | `buildkit_scrape_failures_total`     | counter   | `source`              | Failed Control API fetches by source     |
 
-The step counters carry the Dockerfile `target` and the repository of the
-exported `image`, so cache-hit rate can be attributed per image and per target:
+The step counters are unlabeled by default. Opt in with
+`--labels.build-steps` (env `LABELS_BUILD_STEPS`): a comma-separated list of
+`target` and/or `image`. Both counters always share the same labels so a
+cache-hit ratio query stays aligned. Unknown names are rejected at startup.
+
+`target` is the Dockerfile target. `image` is the repository of the exported
+image, with tag and digest stripped. Either falls back to `unknown` when a
+build reports none. `image` still grows with each distinct repository; only
+enable it if you need that breakdown.
+
+With `--labels.build-steps target,image`:
 
 ```promql
 sum by (image, target) (rate(buildkit_builds_cached_steps_total[1h]))
   / sum by (image, target) (rate(buildkit_builds_total_steps_total[1h]))
 ```
-
-Both labels fall back to `unknown` when a build reports neither. Image tags and
-digests are stripped, since they are routinely per-build and would make the
-label unbounded.
 
 ## Grafana
 
@@ -77,7 +82,7 @@ cargo build --release
 cargo run --release --   # or: make run
 ```
 
-Config (env or flags): `BUILDKIT_ADDR` (default `unix:///run/buildkit/buildkitd.sock`), `METRICS_ADDR` (default `0.0.0.0:9090`), `SCRAPE_INTERVAL_SECS` (default `15`).
+Config (env or flags): `BUILDKIT_ADDR` (default `unix:///run/buildkit/buildkitd.sock`), `METRICS_ADDR` (default `0.0.0.0:9090`), `SCRAPE_INTERVAL_SECS` (default `15`), `LABELS_BUILD_STEPS` / `--labels.build-steps` (default empty; allowed: `target`, `image`).
 
 ### Image Build
 

@@ -9,7 +9,7 @@ pub mod metrics;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use generated::{
     control_client::ControlClient, BuildHistoryEventType, BuildHistoryRequest, DiskUsageRequest,
     DiskUsageResponse, InfoRequest, InfoResponse, ListWorkersRequest, ListWorkersResponse,
@@ -18,8 +18,10 @@ use hyper_util::rt::TokioIo;
 use metrics_exporter_prometheus::PrometheusHandle;
 use std::collections::HashSet;
 use std::future::Future;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::UnixStream;
@@ -30,7 +32,7 @@ use tower::service_fn;
 use axum::Router;
 
 /// BuildKit Metrics Agent — a lightweight application that scrapes and exposes BuildKit metrics.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "buildkit-metrics-agent")]
 pub struct Args {
     /// BuildKit gRPC endpoint (unix socket path or unix:///path)
@@ -48,6 +50,82 @@ pub struct Args {
     /// Scrape interval for BuildKit Control API
     #[arg(long, env = "SCRAPE_INTERVAL_SECS", default_value = "15")]
     pub scrape_interval_secs: u64,
+
+    #[command(flatten)]
+    pub labels: LabelsConfig,
+}
+
+/// Extra Prometheus labels, per metric family. Empty lists keep the unlabeled
+/// series that existed before these options.
+#[derive(clap::Args, Debug, Clone, Default, PartialEq, Eq)]
+pub struct LabelsConfig {
+    /// Labels on both build-step counters (`target`, `image`). Empty by default.
+    /// The two counters always share this set so a cache-hit ratio stays aligned.
+    #[arg(
+        long = "labels.build-steps",
+        env = "LABELS_BUILD_STEPS",
+        default_value = ""
+    )]
+    pub build_steps: BuildStepLabels,
+}
+
+/// Labels allowed on `buildkit_builds_cached_steps_total` and
+/// `buildkit_builds_total_steps_total`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
+pub enum BuildStepLabel {
+    Target,
+    Image,
+}
+
+/// Ordered, de-duplicated labels for the build-steps family.
+/// Newtype (not `Vec`) so clap parses the CSV as one value.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BuildStepLabels(Vec<BuildStepLabel>);
+
+impl Deref for BuildStepLabels {
+    type Target = [BuildStepLabel];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Vec<BuildStepLabel>> for BuildStepLabels {
+    fn from(labels: Vec<BuildStepLabel>) -> Self {
+        let mut out = Vec::new();
+        for label in labels {
+            if !out.contains(&label) {
+                out.push(label);
+            }
+        }
+        Self(out)
+    }
+}
+
+impl FromStr for BuildStepLabels {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_build_step_labels(s).map(Self)
+    }
+}
+
+/// Parses `--labels.build-steps` / `LABELS_BUILD_STEPS`. Unknown names fail;
+/// duplicates are dropped and input order is kept.
+pub(crate) fn parse_build_step_labels(s: &str) -> Result<Vec<BuildStepLabel>, String> {
+    let mut labels = Vec::new();
+    for raw in s.split(',') {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        let label = BuildStepLabel::from_str(raw, false)
+            .map_err(|_| format!("unknown build-steps label '{raw}', expected target or image"))?;
+        if !labels.contains(&label) {
+            labels.push(label);
+        }
+    }
+    Ok(labels)
 }
 
 /// Normalize `BUILDKIT_ADDR` to a filesystem path (strip optional `unix://` prefix).
@@ -94,6 +172,7 @@ async fn supervised_scrape_loop(
     seen_refs: Arc<Mutex<HashSet<String>>>,
     scrape_interval: Duration,
     mut shutdown_rx: watch::Receiver<bool>,
+    labels: LabelsConfig,
 ) {
     loop {
         if *shutdown_rx.borrow() {
@@ -103,6 +182,7 @@ async fn supervised_scrape_loop(
             path.clone(),
             Arc::clone(&seen_refs),
             scrape_interval,
+            labels.clone(),
         ));
         let child_abort = child.abort_handle();
 
@@ -210,6 +290,7 @@ pub(crate) async fn run_with_graceful(
         Arc::clone(&seen_refs),
         scrape_interval,
         shutdown_rx,
+        args.labels,
     ));
 
     let serve_result = serve_metrics_from_listener(listener, metrics_handle, http_shutdown).await;
@@ -290,11 +371,13 @@ pub async fn scrape_loop(
     socket_path: PathBuf,
     seen_refs: Arc<Mutex<HashSet<String>>>,
     scrape_interval: Duration,
+    labels: LabelsConfig,
 ) {
-    scrape_loop_impl(socket_path, seen_refs, scrape_interval, |p, s| {
+    scrape_loop_impl(socket_path, seen_refs, scrape_interval, move |p, s| {
         let path = p.to_path_buf();
         let seen = Arc::clone(s);
-        Box::pin(async move { scrape_once(path.as_path(), &seen).await })
+        let labels = labels.clone();
+        Box::pin(async move { scrape_once(path.as_path(), &seen, &labels).await })
     })
     .await
 }
@@ -306,13 +389,14 @@ const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 pub async fn scrape_once(
     socket_path: &Path,
     seen_refs: &Arc<Mutex<HashSet<String>>>,
+    labels: &LabelsConfig,
 ) -> Result<()> {
     let channel = connect_control_channel(socket_path)
         .await
         .context("connect buildkit gRPC channel")?;
     let mut client =
         ControlClient::new(channel).max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
-    scrape_once_with(&mut client, seen_refs).await
+    scrape_once_with(&mut client, seen_refs, labels).await
 }
 
 async fn connect_control_channel(socket_path: &Path) -> Result<Channel> {
@@ -396,6 +480,7 @@ impl ControlApi for ControlClient<Channel> {
 pub(crate) async fn scrape_once_with(
     client: &mut impl ControlApi,
     seen_refs: &Arc<Mutex<HashSet<String>>>,
+    labels: &LabelsConfig,
 ) -> Result<()> {
     // Each source is recorded independently: one failed Control API call
     // degrades to a scrape-failure metric rather than dropping the whole cycle.
@@ -413,7 +498,7 @@ pub(crate) async fn scrape_once_with(
     }
     match client.fetch_completed_builds().await {
         Ok(completed) => {
-            metrics::record_build_counters(&take_new_build_records(seen_refs, completed));
+            metrics::record_build_counters(&take_new_build_records(seen_refs, completed), labels);
         }
         Err(e) => note_scrape_failure("builds", &e),
     }
@@ -462,6 +547,76 @@ mod tests {
     use std::sync::Mutex as StdMutex;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
+
+    #[test]
+    fn parse_build_step_labels_empty() {
+        assert_eq!(parse_build_step_labels("").unwrap(), vec![]);
+        assert_eq!(parse_build_step_labels("  , ").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn parse_build_step_labels_each_and_both() {
+        assert_eq!(
+            parse_build_step_labels("target").unwrap(),
+            vec![BuildStepLabel::Target]
+        );
+        assert_eq!(
+            parse_build_step_labels("image").unwrap(),
+            vec![BuildStepLabel::Image]
+        );
+        assert_eq!(
+            parse_build_step_labels("target,image").unwrap(),
+            vec![BuildStepLabel::Target, BuildStepLabel::Image]
+        );
+    }
+
+    #[test]
+    fn parse_build_step_labels_dedupes_stable_order() {
+        assert_eq!(
+            parse_build_step_labels("image, target, image").unwrap(),
+            vec![BuildStepLabel::Image, BuildStepLabel::Target]
+        );
+    }
+
+    #[test]
+    fn parse_build_step_labels_rejects_unknown() {
+        let err = parse_build_step_labels("target,nope").unwrap_err();
+        assert!(
+            err.contains("nope"),
+            "error should name the unknown label: {err}"
+        );
+    }
+
+    #[test]
+    fn clap_parses_labels_build_steps() {
+        let args = Args::try_parse_from([
+            "buildkit-metrics-agent",
+            "--labels.build-steps",
+            "target,image",
+        ])
+        .expect("parse");
+        assert_eq!(
+            &args.labels.build_steps[..],
+            [BuildStepLabel::Target, BuildStepLabel::Image]
+        );
+    }
+
+    #[test]
+    fn clap_rejects_unknown_build_step_label() {
+        let err = Args::try_parse_from(["buildkit-metrics-agent", "--labels.build-steps", "nope"])
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("nope") && msg.contains("unknown build-steps label"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn clap_default_has_no_build_step_labels() {
+        let args = Args::try_parse_from(["buildkit-metrics-agent"]).expect("parse");
+        assert!(args.labels.build_steps.is_empty());
+    }
 
     #[test]
     fn socket_path_strips_unix_scheme() {
@@ -567,8 +722,9 @@ mod tests {
         };
 
         let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let labels = LabelsConfig::default();
         ::metrics::with_local_recorder(&rec, || {
-            rt.block_on(scrape_once_with(&mut fake, &seen))
+            rt.block_on(scrape_once_with(&mut fake, &seen, &labels))
                 .expect("scrape");
         });
 
@@ -594,8 +750,9 @@ mod tests {
             ..Default::default()
         };
         let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let labels = LabelsConfig::default();
         ::metrics::with_local_recorder(&rec, || {
-            rt.block_on(scrape_once_with(&mut fake, &seen))
+            rt.block_on(scrape_once_with(&mut fake, &seen, &labels))
                 .expect("scrape stays ok despite one failed source");
         });
 
@@ -621,8 +778,9 @@ mod tests {
             ..Default::default()
         };
         let seen: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+        let labels = LabelsConfig::default();
         ::metrics::with_local_recorder(&rec, || {
-            rt.block_on(scrape_once_with(&mut fake, &seen))
+            rt.block_on(scrape_once_with(&mut fake, &seen, &labels))
                 .expect("scrape stays ok when all sources fail");
         });
 
@@ -717,9 +875,13 @@ mod tests {
     #[tokio::test]
     async fn scrape_once_fails_on_missing_unix_socket() {
         let seen = Arc::new(Mutex::new(HashSet::new()));
-        let err = scrape_once(Path::new("/no/such/buildkit.sock"), &seen)
-            .await
-            .unwrap_err();
+        let err = scrape_once(
+            Path::new("/no/such/buildkit.sock"),
+            &seen,
+            &LabelsConfig::default(),
+        )
+        .await
+        .unwrap_err();
         let chain = format!("{err:#}");
         assert!(
             chain.contains("connect buildkit gRPC channel")
@@ -767,6 +929,7 @@ mod tests {
             addr: "unix:///tmp/buildkit-metrics-agent-no-such.sock".into(),
             metrics_addr: "127.0.0.1:0".into(),
             scrape_interval_secs: 600,
+            labels: LabelsConfig::default(),
         };
         let task = tokio::spawn(run_with(args));
         tokio::time::sleep(Duration::from_millis(120)).await;
@@ -838,6 +1001,7 @@ mod tests {
             seen,
             Duration::from_secs(600),
             shutdown_rx,
+            LabelsConfig::default(),
         ));
         tokio::time::sleep(Duration::from_millis(200)).await;
         shutdown_tx.send(true).expect("shutdown");
@@ -851,6 +1015,7 @@ mod tests {
             addr: "unix:///tmp/buildkit-metrics-agent-no-such.sock".into(),
             metrics_addr: "127.0.0.1:0".into(),
             scrape_interval_secs: 600,
+            labels: LabelsConfig::default(),
         };
         let r = run_with_graceful(args, std::future::ready(())).await;
         assert!(r.is_ok());
