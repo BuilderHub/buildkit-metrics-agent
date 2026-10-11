@@ -97,7 +97,19 @@ jobs:
         run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest --name chart-testing
 
       - name: Deploy rootless + service example
-        run: kubectl apply -f "examples/kubernetes/rootless+service.yaml"
+        run: |
+          # Example stays unlabeled; this job opts in so we can assert label values.
+          python3 - <<'PY' | kubectl apply -f -
+          from pathlib import Path
+
+          path = Path("examples/kubernetes/rootless+service.yaml")
+          text = path.read_text()
+          old = '        - name: SCRAPE_INTERVAL_SECS\n          value: "15"\n'
+          new = old + '        - name: LABELS_BUILD_STEPS\n          value: "target,image"\n'
+          if old not in text:
+              raise SystemExit(f"refusing to apply: {path} env block changed")
+          print(text.replace(old, new, 1), end="")
+          PY
 
       - name: Wait for buildkit pod readiness
         run: kubectl wait --for=condition=ready pod/buildkitd --timeout=180s
@@ -120,7 +132,14 @@ jobs:
       - name: Run build via buildx on remote BuildKit
         run: |
           docker buildx create --name e2e-remote --driver remote tcp://127.0.0.1:1234 --use
-          docker buildx build --builder e2e-remote --progress plain --output type=cacheonly .
+          # Small named-target image so step-counter labels have known values.
+          mkdir -p /tmp/e2e-ctx
+          printf '%s\n' 'FROM busybox AS runtime' 'RUN echo e2e' > /tmp/e2e-ctx/Dockerfile
+          docker buildx build --builder e2e-remote --progress plain \
+            --target runtime \
+            -t e2e.example/app:ci \
+            --output type=oci,dest=/tmp/e2e-app.tar \
+            /tmp/e2e-ctx
 
       - name: Assert metrics expose build counters
         run: |
@@ -135,23 +154,46 @@ jobs:
               "buildkit_builds_succeeded_total",
               "buildkit_builds_failed_total",
           )
+          step_labels = (("target", "runtime"), ("image", "e2e.example/app"))
           deadline = time.time() + 120
           latest_body = ""
+
+          def unlabeled(body, name):
+              m = re.search(rf"^{re.escape(name)}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", body, re.M)
+              return float(m.group(1)) if m else None
+
+          def labeled(body, name, labels):
+              parts = "".join(
+                  rf'(?=[^}}]*{re.escape(key)}="{re.escape(value)}")' for key, value in labels
+              )
+              m = re.search(
+                  rf"^{re.escape(name)}\{{{parts}[^}}]*\}}\s+([0-9.]+)$",
+                  body,
+                  re.M,
+              )
+              return float(m.group(1)) if m else None
 
           try:
               while time.time() < deadline:
                   latest_body = urllib.request.urlopen(url, timeout=5).read().decode()
-                  values = {}
-                  for metric in wanted:
-                      m = re.search(rf"^{metric}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", latest_body, re.M)
-                      if m:
-                          values[metric] = float(m.group(1))
+                  values = {metric: unlabeled(latest_body, metric) for metric in wanted}
+                  cached = labeled(
+                      latest_body, "buildkit_builds_cached_steps_total", step_labels
+                  )
+                  total_steps = labeled(
+                      latest_body, "buildkit_builds_total_steps_total", step_labels
+                  )
+                  values["buildkit_builds_cached_steps_total"] = cached
+                  values["buildkit_builds_total_steps_total"] = total_steps
 
                   if (
-                      all(metric in values for metric in wanted)
+                      all(values[metric] is not None for metric in wanted)
                       and values["buildkit_builds_total"] >= 1
                       and values["buildkit_builds_succeeded_total"] >= 1
                       and values["buildkit_builds_failed_total"] == 0
+                      and cached is not None
+                      and total_steps is not None
+                      and total_steps >= 1
                   ):
                       print("Metrics check passed:", values)
                       break
