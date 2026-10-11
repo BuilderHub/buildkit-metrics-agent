@@ -62,6 +62,8 @@ spec:
           value: 0.0.0.0:9090
         - name: SCRAPE_INTERVAL_SECS
           value: "15"
+        - name: LABELS_BUILD_STEPS
+          value: "target,image"
       ports:
         - containerPort: 9090
           name: metrics

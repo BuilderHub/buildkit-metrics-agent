@@ -1,6 +1,7 @@
 //! Prometheus metrics for BuildKit status (info, workers, cache, builds).
 
 use crate::generated::{BuildHistoryRecord, DiskUsageResponse, InfoResponse, ListWorkersResponse};
+use crate::{BuildStepLabel, LabelsConfig};
 use metrics_exporter_prometheus::{Matcher, PrometheusHandle};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -127,30 +128,33 @@ fn repository(image: &str) -> &str {
     }
 }
 
-pub(crate) fn record_build_counters(builds: &[BuildHistoryRecord]) {
+fn build_step_labels(r: &BuildHistoryRecord, config: &LabelsConfig) -> Vec<metrics::Label> {
+    config
+        .build_steps
+        .as_slice()
+        .iter()
+        .map(|label| match label {
+            BuildStepLabel::Target => metrics::Label::new("target", build_target(r)),
+            BuildStepLabel::Image => metrics::Label::new("image", build_image(r)),
+        })
+        .collect()
+}
+
+pub(crate) fn record_build_counters(builds: &[BuildHistoryRecord], labels: &LabelsConfig) {
     for r in builds {
         let (succeeded, failed) = if r.error.as_ref().is_some_and(|e| e.code != 0) {
             (0u64, 1u64)
         } else {
             (1u64, 0u64)
         };
-        let target = build_target(r);
-        let image = build_image(r);
+        let step_labels = build_step_labels(r, labels);
         metrics::counter!("buildkit_builds_total").increment(1);
         metrics::counter!("buildkit_builds_succeeded_total").increment(succeeded);
         metrics::counter!("buildkit_builds_failed_total").increment(failed);
-        metrics::counter!(
-            "buildkit_builds_cached_steps_total",
-            "target" => target.clone(),
-            "image" => image.clone()
-        )
-        .increment(r.num_cached_steps as u64);
-        metrics::counter!(
-            "buildkit_builds_total_steps_total",
-            "target" => target,
-            "image" => image
-        )
-        .increment(r.num_total_steps as u64);
+        metrics::counter!("buildkit_builds_cached_steps_total", step_labels.clone())
+            .increment(r.num_cached_steps as u64);
+        metrics::counter!("buildkit_builds_total_steps_total", step_labels)
+            .increment(r.num_total_steps as u64);
 
         record_build_duration_if_valid(r);
     }
@@ -170,11 +174,12 @@ pub fn scrape_and_record(
     workers: ListWorkersResponse,
     disk: DiskUsageResponse,
     builds: Vec<BuildHistoryRecord>,
+    labels: &LabelsConfig,
 ) {
     record_info(&info);
     record_workers(&workers);
     record_disk(&disk);
-    record_build_counters(&builds);
+    record_build_counters(&builds, labels);
 }
 
 #[cfg(test)]
@@ -209,8 +214,36 @@ mod tests {
         disk: DiskUsageResponse,
         builds: Vec<BuildHistoryRecord>,
     ) -> String {
-        metrics::with_local_recorder(rec, || scrape_and_record(info, workers, disk, builds));
+        render_with_labels(
+            rec,
+            handle,
+            info,
+            workers,
+            disk,
+            builds,
+            &LabelsConfig::default(),
+        )
+    }
+
+    fn render_with_labels(
+        rec: &metrics_exporter_prometheus::PrometheusRecorder,
+        handle: &PrometheusHandle,
+        info: InfoResponse,
+        workers: ListWorkersResponse,
+        disk: DiskUsageResponse,
+        builds: Vec<BuildHistoryRecord>,
+        labels: &LabelsConfig,
+    ) -> String {
+        metrics::with_local_recorder(rec, || {
+            scrape_and_record(info, workers, disk, builds, labels)
+        });
         handle.render()
+    }
+
+    fn step_label_config(labels: &[BuildStepLabel]) -> LabelsConfig {
+        LabelsConfig {
+            build_steps: labels.to_vec().into(),
+        }
     }
 
     fn empty_info() -> InfoResponse {
@@ -374,11 +407,10 @@ mod tests {
         assert!(out.contains("buildkit_builds_total 1"));
         assert!(out.contains("buildkit_builds_succeeded_total 1"));
         assert!(out.contains("buildkit_builds_failed_total 0"));
-        // No target and no exporter on the record, so both labels fall back.
-        assert!(out
-            .contains(r#"buildkit_builds_cached_steps_total{target="unknown",image="unknown"} 3"#));
-        assert!(out
-            .contains(r#"buildkit_builds_total_steps_total{target="unknown",image="unknown"} 10"#));
+        assert!(out.contains("buildkit_builds_cached_steps_total 3"));
+        assert!(out.contains("buildkit_builds_total_steps_total 10"));
+        assert!(!out.contains(r#"buildkit_builds_cached_steps_total{"#));
+        assert!(!out.contains(r#"buildkit_builds_total_steps_total{"#));
     }
 
     #[test]
@@ -537,14 +569,22 @@ mod tests {
     }
 
     fn render_one(build: BuildHistoryRecord) -> String {
+        render_one_with(
+            build,
+            &step_label_config(&[BuildStepLabel::Target, BuildStepLabel::Image]),
+        )
+    }
+
+    fn render_one_with(build: BuildHistoryRecord, labels: &LabelsConfig) -> String {
         let (rec, handle) = recorder();
-        render_with(
+        render_with_labels(
             &rec,
             &handle,
             empty_info(),
             empty_workers(),
             empty_disk(),
             vec![build],
+            labels,
         )
     }
 
@@ -561,6 +601,36 @@ mod tests {
         assert!(out.contains(
             r#"buildkit_builds_total_steps_total{target="runtime",image="ghcr.io/acme/app"} 6"#
         ));
+    }
+
+    #[test]
+    fn labels_step_counters_with_target_only() {
+        let out = render_one_with(
+            labelled_build_record(
+                &[("target", "runtime")],
+                vec![],
+                &[("image.name", "ghcr.io/acme/app:sha-1a2b3c")],
+            ),
+            &step_label_config(&[BuildStepLabel::Target]),
+        );
+        assert!(out.contains(r#"buildkit_builds_cached_steps_total{target="runtime"} 4"#));
+        assert!(out.contains(r#"buildkit_builds_total_steps_total{target="runtime"} 6"#));
+        assert!(!out.contains(r#"image=""#));
+    }
+
+    #[test]
+    fn labels_step_counters_with_image_only() {
+        let out = render_one_with(
+            labelled_build_record(
+                &[("target", "runtime")],
+                vec![],
+                &[("image.name", "ghcr.io/acme/app:sha-1a2b3c")],
+            ),
+            &step_label_config(&[BuildStepLabel::Image]),
+        );
+        assert!(out.contains(r#"buildkit_builds_cached_steps_total{image="ghcr.io/acme/app"} 4"#));
+        assert!(out.contains(r#"buildkit_builds_total_steps_total{image="ghcr.io/acme/app"} 6"#));
+        assert!(!out.contains(r#"target=""#));
     }
 
     #[test]

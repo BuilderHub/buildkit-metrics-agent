@@ -103,67 +103,13 @@ jobs:
         run: kubectl wait --for=condition=ready pod/buildkitd --timeout=180s
 
       - name: Port-forward services
-        run: |
-          kubectl port-forward service/buildkitd 1234:1234 >/tmp/pf-buildkitd.log 2>&1 &
-          kubectl port-forward service/buildkit-metrics-agent 9090:9090 >/tmp/pf-metrics.log 2>&1 &
-
-          for _ in $(seq 1 30); do
-            if curl -sSf "http://127.0.0.1:9090/metrics" >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "Port-forward did not become ready"
-          exit 1
+        run: ci/on-pr/e2e-kind/port-forward.sh
 
       - name: Run build via buildx on remote BuildKit
-        run: |
-          docker buildx create --name e2e-remote --driver remote tcp://127.0.0.1:1234 --use
-          docker buildx build --builder e2e-remote --progress plain --output type=cacheonly .
+        run: ci/on-pr/e2e-kind/run-build.sh
 
       - name: Assert metrics expose build counters
-        run: |
-          python - <<'PY'
-          import re
-          import time
-          import urllib.request
-
-          url = "http://127.0.0.1:9090/metrics"
-          wanted = (
-              "buildkit_builds_total",
-              "buildkit_builds_succeeded_total",
-              "buildkit_builds_failed_total",
-          )
-          deadline = time.time() + 120
-          latest_body = ""
-
-          try:
-              while time.time() < deadline:
-                  latest_body = urllib.request.urlopen(url, timeout=5).read().decode()
-                  values = {}
-                  for metric in wanted:
-                      m = re.search(rf"^{metric}(?:\{{[^}}]*\}})?\s+([0-9.]+)$", latest_body, re.M)
-                      if m:
-                          values[metric] = float(m.group(1))
-
-                  if (
-                      all(metric in values for metric in wanted)
-                      and values["buildkit_builds_total"] >= 1
-                      and values["buildkit_builds_succeeded_total"] >= 1
-                      and values["buildkit_builds_failed_total"] == 0
-                  ):
-                      print("Metrics check passed:", values)
-                      break
-
-                  time.sleep(5)
-              else:
-                  raise SystemExit("Expected build metrics were not observed within timeout")
-          finally:
-              print("----- /metrics payload start -----")
-              print(latest_body.rstrip())
-              print("----- /metrics payload end -----")
-          PY
+        run: python ci/on-pr/e2e-kind/assert-metrics.py
 
   all-green:
     if: ${{ always() }}
