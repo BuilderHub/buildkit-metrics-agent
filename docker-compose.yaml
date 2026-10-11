@@ -31,6 +31,7 @@ services:
     environment:
       BUILDKIT_ADDR: unix:///shared/buildkit/buildkitd.sock
       METRICS_ADDR: 0.0.0.0:9090
+      LABELS_BUILD_STEPS: target,image
       RUST_LOG: ${RUST_LOG:-buildkit_metrics_agent=debug}
     ports:
       - "9090:9090"
