@@ -97,19 +97,7 @@ jobs:
         run: kind load docker-image ghcr.io/builderhub/buildkit-metrics-agent:latest --name chart-testing
 
       - name: Deploy rootless + service example
-        run: |
-          # Example stays unlabeled; this job opts in so we can assert label values.
-          python3 - <<'PY' | kubectl apply -f -
-          from pathlib import Path
-
-          path = Path("examples/kubernetes/rootless+service.yaml")
-          text = path.read_text()
-          old = '        - name: SCRAPE_INTERVAL_SECS\n          value: "15"\n'
-          new = old + '        - name: LABELS_BUILD_STEPS\n          value: "target,image"\n'
-          if old not in text:
-              raise SystemExit(f"refusing to apply: {path} env block changed")
-          print(text.replace(old, new, 1), end="")
-          PY
+        run: kubectl apply -f "examples/kubernetes/rootless+service.yaml"
 
       - name: Wait for buildkit pod readiness
         run: kubectl wait --for=condition=ready pod/buildkitd --timeout=180s
